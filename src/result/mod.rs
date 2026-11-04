@@ -50,6 +50,7 @@ fn list(ctx: &Ctx, args: &ResultListArgs) -> Result<()> {
             if whole_run {
                 row.push(format!("T{}", text(&r["test_id"])));
             }
+            row.push(text(&r["version"]));
             row.push(text(&r["elapsed"]));
             row.push(first_line(&markup::to_text(&text(&r["comment"])), 60));
             row
