@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "TestRail CLI for plans, runs, cases, attachments, and step results written in Markdown with inline screenshots"
 license = "MIT"
-repository = "https://github.com/nmoinvaz/testrail-arriba"
+repository = "https://github.com/arriba-tools/testrail"
 
 [dependencies]
 anyhow = "1.0"

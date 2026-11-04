@@ -1,8 +1,8 @@
 # testrail-arriba
 
-[![Build](https://github.com/nmoinvaz/testrail-arriba/actions/workflows/build.yml/badge.svg)](https://github.com/nmoinvaz/testrail-arriba/actions/workflows/build.yml)
-[![Lint](https://github.com/nmoinvaz/testrail-arriba/actions/workflows/lint.yml/badge.svg)](https://github.com/nmoinvaz/testrail-arriba/actions/workflows/lint.yml)
-[![codecov](https://codecov.io/gh/nmoinvaz/testrail-arriba/graph/badge.svg)](https://codecov.io/gh/nmoinvaz/testrail-arriba)
+[![Build](https://github.com/arriba-tools/testrail/actions/workflows/build.yml/badge.svg)](https://github.com/arriba-tools/testrail/actions/workflows/build.yml)
+[![Lint](https://github.com/arriba-tools/testrail/actions/workflows/lint.yml/badge.svg)](https://github.com/arriba-tools/testrail/actions/workflows/lint.yml)
+[![codecov](https://codecov.io/gh/arriba-tools/testrail/graph/badge.svg)](https://codecov.io/gh/arriba-tools/testrail)
 
 A TestRail CLI for the manual test workflows [trcli](https://github.com/gurock/trcli) doesn't cover:
 adding one result with per-step outcomes, screenshots that show inline in those steps, attachments on
@@ -14,11 +14,11 @@ agents can drive the same workflows a person runs by hand.
 
 ## Install
 
-Download a binary from the [releases](https://github.com/nmoinvaz/testrail-arriba/releases) and put
+Download a binary from the [releases](https://github.com/arriba-tools/testrail/releases) and put
 it on your `PATH`, or build it from source:
 
 ```
-cargo install --git https://github.com/nmoinvaz/testrail-arriba
+cargo install --git https://github.com/arriba-tools/testrail
 ```
 
 ## Use with Claude
