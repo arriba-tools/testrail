@@ -348,7 +348,8 @@ impl Images<'_> {
             bail!("Image {} does not exist", path.display());
         }
         let served = if self.dry_run {
-            path.display().to_string()
+            // Backslashes would come out of the HTML percent-encoded.
+            path.display().to_string().replace('\\', "/")
         } else {
             let id = attachment::upload(
                 self.client,
@@ -570,7 +571,13 @@ mod tests {
         let p = prepare(&client, &a, dir.path()).unwrap();
         let actual = text(&p.payload["custom_step_results"][0]["actual"]);
         assert!(
-            actual.contains(&dir.path().join("s1.png").display().to_string()),
+            actual.contains(
+                &dir.path()
+                    .join("s1.png")
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            ),
             "{actual}"
         );
         assert!(p.images.is_empty());
