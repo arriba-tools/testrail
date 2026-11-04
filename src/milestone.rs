@@ -43,7 +43,13 @@ fn row(m: &Value, indent: &str) -> Vec<String> {
     if m["is_completed"].as_bool() == Some(true) {
         name.push_str(" (completed)");
     }
-    vec![text(&m["id"]), day(&m["due_on"]), name]
+    let due = day(&m["due_on"]);
+    let due = if due.is_empty() {
+        due
+    } else {
+        format!("due {due}")
+    };
+    vec![text(&m["id"]), due, name]
 }
 
 fn view(ctx: &Ctx, milestone: &str) -> Result<()> {
