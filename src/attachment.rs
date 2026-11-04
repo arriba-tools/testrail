@@ -212,7 +212,8 @@ fn fetch(
         .and_then(|v| v.to_str().ok())
         .and_then(disposition_name);
     let name = name.map(str::to_string).or(served);
-    let mut file = safe_name(name.as_deref().unwrap_or(""), id);
+    // Pasted screenshots are all named image.png, so the ID leads to tell them apart.
+    let mut file = format!("{id}-{}", safe_name(name.as_deref().unwrap_or(""), id));
     if !taken.insert(file.clone()) {
         file = with_suffix(&file, id);
         taken.insert(file.clone());
@@ -369,11 +370,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("shot.png")).unwrap(),
+            std::fs::read_to_string(dir.path().join("a1-shot.png")).unwrap(),
             "one"
         );
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("shot-2.png")).unwrap(),
+            std::fs::read_to_string(dir.path().join("2-shot.png")).unwrap(),
             "two"
         );
     }
@@ -389,7 +390,7 @@ mod tests {
         let client = Client::for_tests(&server.url());
         let dir = tempfile::tempdir().unwrap();
         let (path, bytes) = fetch(&client, "9", None, dir.path(), &mut HashSet::new()).unwrap();
-        assert_eq!(path, dir.path().join("run.log"));
+        assert_eq!(path, dir.path().join("9-run.log"));
         assert_eq!(bytes, 3);
     }
 
