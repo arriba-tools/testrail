@@ -12,6 +12,8 @@ use crate::credentials::Credentials;
 const RETRIES: u32 = 5;
 /// Wait when a 429 names no Retry-After.
 const DEFAULT_WAIT: Duration = Duration::from_secs(5);
+/// Retries of a read after a gateway error, waiting twice as long each time from one second.
+const GATEWAY_RETRIES: u32 = 3;
 
 /// Install the TLS crypto provider once, before any client is built. The ring provider builds
 /// without the C toolchains aws-lc-rs needs.
@@ -80,12 +82,28 @@ impl Client {
             .header(reqwest::header::AUTHORIZATION, &self.auth)
     }
 
-    /// Send the request `build` makes, building it again to retry when TestRail rate limits.
-    fn execute(&self, what: &str, build: &dyn Fn() -> Result<RequestBuilder>) -> Result<Response> {
+    /// Send the request `build` makes, building it again to retry when TestRail rate limits. Reads
+    /// also retry gateway errors, which writes cannot since the server may have acted on them.
+    fn execute(
+        &self,
+        what: &str,
+        read: bool,
+        build: &dyn Fn() -> Result<RequestBuilder>,
+    ) -> Result<Response> {
         let mut attempt = 0;
+        let mut gateway = 0;
         loop {
             let resp = build()?.send().with_context(|| format!("{what} failed"))?;
-            if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt < RETRIES {
+            let status = resp.status();
+            if read && gateway < GATEWAY_RETRIES && matches!(status.as_u16(), 502..=504) {
+                let wait = Duration::from_secs(1 << gateway).min(self.max_wait);
+                if !wait.is_zero() {
+                    std::thread::sleep(wait);
+                }
+                gateway += 1;
+                continue;
+            }
+            if status == StatusCode::TOO_MANY_REQUESTS && attempt < RETRIES {
                 let wait = retry_after(&resp).min(self.max_wait);
                 if !wait.is_zero() {
                     eprintln!(
@@ -103,7 +121,8 @@ impl Client {
 
     fn send(&self, method: Method, endpoint: &str, body: Option<&Value>) -> Result<Value> {
         let what = format!("{method} {endpoint}");
-        let resp = self.execute(&what, &|| {
+        let read = method == Method::GET;
+        let resp = self.execute(&what, read, &|| {
             // TestRail rejects API requests that do not declare JSON, even ones without a body.
             let req = self
                 .request(method.clone(), endpoint)
@@ -130,7 +149,7 @@ impl Client {
             bail!("{} is not a file", file.display());
         }
         let what = format!("POST {endpoint}");
-        let resp = self.execute(&what, &|| {
+        let resp = self.execute(&what, false, &|| {
             let form = reqwest::blocking::multipart::Form::new()
                 .file("attachment", file)
                 .with_context(|| format!("Failed to read {}", file.display()))?;
@@ -142,7 +161,7 @@ impl Client {
     /// GET an endpoint that answers with a file rather than JSON.
     pub fn fetch(&self, endpoint: &str) -> Result<Response> {
         let what = format!("GET {endpoint}");
-        self.execute(&what, &|| Ok(self.request(Method::GET, endpoint)))
+        self.execute(&what, true, &|| Ok(self.request(Method::GET, endpoint)))
     }
 }
 
@@ -286,6 +305,30 @@ mod tests {
         let client = Client::for_tests(&server.url());
         assert_eq!(client.get("get_projects").unwrap(), json!([]));
         limited.assert();
+    }
+
+    #[test]
+    fn reads_retry_gateway_errors_and_writes_do_not() {
+        let mut server = Server::new();
+        let timeout = server
+            .mock("GET", "/index.php?/api/v2/get_run/1")
+            .with_status(504)
+            .expect(2)
+            .create();
+        server
+            .mock("GET", "/index.php?/api/v2/get_run/1")
+            .with_body("{}")
+            .create();
+        let write = server
+            .mock("POST", "/index.php?/api/v2/add_result/1")
+            .with_status(504)
+            .expect(1)
+            .create();
+        let client = Client::for_tests(&server.url());
+        assert_eq!(client.get("get_run/1").unwrap(), json!({}));
+        timeout.assert();
+        assert!(client.post("add_result/1", &json!({})).is_err());
+        write.assert();
     }
 
     #[test]
