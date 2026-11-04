@@ -93,8 +93,9 @@ pub fn resolve(client: &Client, text: &str) -> Result<u64> {
     pick(&projects, text)
 }
 
-fn pick(projects: &[Value], wanted: &str) -> Result<u64> {
-    let wanted = wanted.trim().to_lowercase();
+fn pick(projects: &[Value], typed: &str) -> Result<u64> {
+    let typed = typed.trim();
+    let wanted = typed.to_lowercase();
     let name = |p: &Value| p["name"].as_str().unwrap_or("").to_lowercase();
     let id = |p: &Value| p["id"].as_u64().unwrap_or(0);
     if let Some(p) = projects.iter().find(|p| name(p) == wanted) {
@@ -107,10 +108,10 @@ fn pick(projects: &[Value], wanted: &str) -> Result<u64> {
     match partial.as_slice() {
         [one] => Ok(id(one)),
         [] => {
-            bail!("No project is named {wanted:?}. Run `testrail-arriba project list` to see them.")
+            bail!("No project is named {typed:?}. Run `testrail-arriba project list` to see them.")
         }
         many => bail!(
-            "Several projects match {wanted:?}: {}",
+            "Several projects match {typed:?}: {}",
             many.iter()
                 .map(|p| format!("{} ({})", text(&p["name"]), id(p)))
                 .collect::<Vec<_>>()
