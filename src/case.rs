@@ -1,5 +1,7 @@
 use anyhow::Result;
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 use crate::api::{self, with_params};
 use crate::cli::{CaseCommand, CaseListArgs};
@@ -63,8 +65,47 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
     }
     rows.push(vec!["Updated".to_string(), date(&c["updated_on"])]);
     println!("{}", table(&rows, "  "));
-    print_steps(&c);
+    let body = body(&c);
+    print!("{body}");
+    if markup::has_attachment_image(&body) {
+        println!("\n{IMAGE_HINT}");
+    }
     Ok(())
+}
+
+/// Printed after text that names attachment images, so the reader knows how to see them.
+pub const IMAGE_HINT: &str = "Download an image with `testrail-arriba attachment download <ID>`.";
+
+/// Fields shown as the steps, or not shown at all.
+const STEP_FIELDS: [&str; 5] = [
+    "custom_steps",
+    "custom_expected",
+    "custom_preconds",
+    "custom_steps_separated",
+    "custom_step_results",
+];
+
+/// Custom text fields other than the steps, such as a background, labeled from their names.
+fn text_fields(case: &Value) -> Vec<(String, String)> {
+    case.as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(k, _)| k.starts_with("custom_") && !STEP_FIELDS.contains(&k.as_str()))
+        .filter_map(|(k, v)| {
+            let t = markup::to_text(v.as_str()?);
+            (!t.is_empty()).then(|| (field_label(k), t))
+        })
+        .collect()
+}
+
+/// `custom_case_background` as `Case background`.
+fn field_label(key: &str) -> String {
+    let words = key.trim_start_matches("custom_").replace('_', " ");
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// The steps a case keeps, whichever template it uses: separated steps with their expected
@@ -85,26 +126,55 @@ pub fn steps(case: &Value) -> Vec<(String, String)> {
     }
 }
 
-/// Print a case's or test's preconditions and steps.
-pub fn print_steps(case: &Value) {
+/// A case's or test's custom text, preconditions, and steps as plain text, each section opening
+/// with a blank line.
+pub fn body(case: &Value) -> String {
+    let mut out = String::new();
+    let mut section = |title: &str, text: &str| {
+        out.push_str(&format!("\n{title}\n{}\n", indent(text, "  ", "  ")));
+    };
+    for (label, value) in text_fields(case) {
+        section(&label, &value);
+    }
     let preconds = markup::to_text(&text(&case["custom_preconds"]));
     if !preconds.is_empty() {
-        println!("\nPreconditions\n{}", indent(&preconds, "  ", "  "));
+        section("Preconditions", &preconds);
     }
     let steps = steps(case);
-    if steps.is_empty() {
-        return;
-    }
-    println!("\nSteps");
-    for (i, (content, expected)) in steps.iter().enumerate() {
-        let first = format!("  {}. ", i + 1);
-        let rest = " ".repeat(first.len());
-        println!("{}", indent(&markup::to_text(content), &first, &rest));
-        let expected = markup::to_text(expected);
-        if !expected.is_empty() {
-            println!("{}", indent(&format!("Expected: {expected}"), &rest, &rest));
+    if !steps.is_empty() {
+        out.push_str("\nSteps\n");
+        for (i, (content, expected)) in steps.iter().enumerate() {
+            let first = format!("  {}. ", i + 1);
+            let rest = " ".repeat(first.len());
+            let content = markup::to_text(content);
+            // A list opens on its own line, so its numbers don't run into the step's.
+            if starts_with_list(&content) {
+                out.push_str(first.trim_end());
+                out.push('\n');
+                out.push_str(&indent(&content, &rest, &rest));
+            } else {
+                out.push_str(&indent(&content, &first, &rest));
+            }
+            out.push('\n');
+            let expected = markup::to_text(expected);
+            if !expected.is_empty() {
+                let label = if starts_with_list(&expected) {
+                    format!("Expected:\n{}", indent(&expected, "  ", "  "))
+                } else {
+                    format!("Expected: {expected}")
+                };
+                out.push_str(&indent(&label, &rest, &rest));
+                out.push('\n');
+            }
         }
     }
+    out
+}
+
+static LIST_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:\d+\.|-) ").unwrap());
+
+fn starts_with_list(text: &str) -> bool {
+    LIST_START.is_match(text)
 }
 
 /// Text with `first` before its first line and `rest` before the others.
@@ -147,6 +217,37 @@ mod tests {
         let case = json!({"custom_steps": "1. Open\n2. Click", "custom_expected": "Works"});
         assert_eq!(steps(&case).len(), 1);
         assert!(steps(&json!({"custom_steps": ""})).is_empty());
+    }
+
+    #[test]
+    fn body_shows_custom_text_preconditions_and_steps() {
+        let case = json!({
+            "custom_case_background": "<p>Why this matters</p>",
+            "custom_automation_type": 0,
+            "custom_preconds": "Signed out",
+            "custom_steps_separated": [
+                {"content": "<p>Open</p><p>Click</p>", "expected": "<p><img src=\"index.php?/attachments/get/7\"></p>"}
+            ]
+        });
+        let body = body(&case);
+        assert_eq!(
+            body,
+            "\nCase background\n  Why this matters\n\nPreconditions\n  Signed out\n\nSteps\n  1. Open\n     Click\n     Expected: [image: attachment 7]\n"
+        );
+        assert!(markup::has_attachment_image(&body));
+        assert_eq!(field_label("custom_x"), "X");
+    }
+
+    #[test]
+    fn lists_open_on_their_own_line() {
+        let case = json!({"custom_steps_separated": [{
+            "content": "<ol><li>Try empty</li><li>Try wrong</li></ol>",
+            "expected": "<ul><li>Errors show</li></ul>"
+        }]});
+        assert_eq!(
+            body(&case),
+            "\nSteps\n  1.\n     1. Try empty\n     2. Try wrong\n     Expected:\n       - Errors show\n"
+        );
     }
 
     #[test]

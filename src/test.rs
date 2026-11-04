@@ -74,12 +74,16 @@ fn view(ctx: &Ctx, args: &TestViewArgs) -> Result<()> {
         vec!["Case".to_string(), format!("C{}", text(&t["case_id"]))],
     ];
     println!("{}", table(&rows, "  "));
-    case::print_steps(&t);
+    let body = case::body(&t);
+    print!("{body}");
     if !results.items.is_empty() {
         println!("\nResults");
         for r in &results.items {
             print_result(r, &statuses);
         }
+    }
+    if markup::has_attachment_image(&body) {
+        println!("\n{}", case::IMAGE_HINT);
     }
     Ok(())
 }

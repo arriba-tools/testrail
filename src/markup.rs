@@ -261,6 +261,11 @@ pub fn to_text(text: &str) -> String {
         .to_string()
 }
 
+/// Whether plain text from [`to_text`] names an attachment image.
+pub fn has_attachment_image(text: &str) -> bool {
+    text.contains("[image: attachment ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +382,8 @@ mod tests {
             to_text("<img src=\"https://x/y.png\">"),
             "[image: https://x/y.png]"
         );
+        assert!(has_attachment_image("a [image: attachment 9]"));
+        assert!(!has_attachment_image("a [image: https://x]"));
     }
 
     #[test]
