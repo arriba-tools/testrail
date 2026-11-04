@@ -70,7 +70,7 @@ Wherever a command takes an ID, it also takes TestRail's prefixed form, such as 
 | `suite list -p <PROJECT>` | List a project's suites |
 | `section list -p <PROJECT>` | List sections, `--tree` to indent them under their parents |
 | `case list -p <PROJECT>` | List cases, by `--suite`, `--section`, or title `--filter` |
-| `case view <CASE>` | Show a case with its preconditions and steps |
+| `case view <CASE>` | Show a case with its custom text fields, preconditions, and steps |
 | `milestone list -p <PROJECT>` | List milestones with their sub-milestones |
 | `milestone view <MILESTONE>` | Show a milestone |
 | `plan list -p <PROJECT>` | List plans, newest first, by `--name` or `--milestone` |
@@ -79,8 +79,12 @@ Wherever a command takes an ID, it also takes TestRail's prefixed form, such as 
 | `run list --plan <PLAN>` | List the runs inside a plan, which TestRail's run list leaves out |
 | `run view <RUN>` | Show a run with its progress |
 | `test list <RUN>` | List a run's tests, `--status failed,retest` to pick some |
-| `test view <TEST>` | Show a test with its steps and latest results |
+| `test view <TEST>` | Show a test with its run and configuration, steps, and latest results with step outcomes |
 | `status list` | List result statuses with their IDs, custom ones included |
+
+Rich text reads as plain text, with lists numbered and nested as in TestRail, and images shown as
+`[image: attachment 451]`, which `attachment download 451` fetches. Run and plan tallies name
+custom statuses, as in `4 not applicable`.
 
 Case, plan, run, test, and result lists stop at 50 unless `--limit` or `--all` says otherwise, and
 say so on stderr when more remain.
@@ -105,7 +109,9 @@ the result once it exists, and `--dry-run` prints what would be sent without sen
 | `attachment download <ID>...` | Download attachments, or every one with `--run`, `--case`, `--test`, or `--plan` |
 | `attachment delete <ID>...` | Delete attachments, after confirming |
 
-Downloads go to a `testrail-arriba` folder in the temp directory unless `-o` names one.
+Downloads go to a `testrail-arriba` folder in the temp directory unless `-o` names one. Each file
+name starts with the attachment ID, as in `451-image.png`, since pasted screenshots all share one
+name.
 
 ### API
 
