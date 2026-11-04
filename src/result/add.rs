@@ -167,6 +167,14 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
         } else {
             Vec::new()
         };
+        if inputs.len() < case_steps.len() {
+            eprintln!(
+                "Note: the steps file covers {} of C{}'s {} steps.",
+                inputs.len(),
+                target.case,
+                case_steps.len()
+            );
+        }
         let mut steps = Vec::new();
         for (i, input) in inputs.into_iter().enumerate() {
             let from_case = case_steps.get(i);
