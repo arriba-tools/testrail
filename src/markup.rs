@@ -79,34 +79,182 @@ pub fn quote(html: &str) -> String {
     }
 }
 
-static TAG_IMAGE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?i)<img\b[^>]*?\bsrc="([^"]*)"[^>]*>"#).unwrap());
-static TAG_BREAK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<br\s*/?>").unwrap());
-static TAG_BLOCK_END: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)</(?:p|div|h[1-6]|li|tr|blockquote|pre)>").unwrap());
-static TAG_ITEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<li\b[^>]*>").unwrap());
-static TAG_ANY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
+static TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>|[^<]+").unwrap());
+static TAG_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^</?\s*([a-zA-Z0-9]+)").unwrap());
+static ATTACHMENT_ID: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)data-attachment-id="([^"]+)"|attachments/get/([A-Za-z0-9-]+)"#).unwrap()
+});
+static IMAGE_SRC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\bsrc\s*=\s*"([^"]*)""#).unwrap());
+static MARKDOWN_IMAGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"!\[[^\]]*\]\(\s*index\.php\?/attachments/get/([A-Za-z0-9-]+)[^)]*\)").unwrap()
+});
+static ENTITY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"&(#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);").unwrap());
+static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 static BLANK_LINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
 
-/// Rich text as plain text for the terminal. Images become Markdown references.
+/// How an image reads in plain text. Attachments are named by ID, so they can be downloaded.
+fn image_text(tag: &str) -> String {
+    if let Some(caps) = ATTACHMENT_ID.captures(tag) {
+        let id = caps.get(1).or(caps.get(2)).map_or("", |m| m.as_str());
+        return format!("[image: attachment {id}]");
+    }
+    match IMAGE_SRC.captures(tag) {
+        Some(caps) => format!("[image: {}]", &caps[1]),
+        None => "[image]".to_string(),
+    }
+}
+
+/// Text with HTML entities decoded. Unknown names are left as they are.
+fn decode_entities(text: &str) -> String {
+    ENTITY
+        .replace_all(text, |caps: &Captures| {
+            let e = &caps[1];
+            let c = if let Some(hex) = e.strip_prefix("#x").or(e.strip_prefix("#X")) {
+                u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+            } else if let Some(dec) = e.strip_prefix('#') {
+                dec.parse().ok().and_then(char::from_u32)
+            } else {
+                match e {
+                    "nbsp" => Some(' '),
+                    "lt" => Some('<'),
+                    "gt" => Some('>'),
+                    "quot" => Some('"'),
+                    "apos" => Some('\''),
+                    "amp" => Some('&'),
+                    "hellip" => Some('…'),
+                    "mdash" => Some('—'),
+                    "ndash" => Some('–'),
+                    "lsquo" => Some('‘'),
+                    "rsquo" => Some('’'),
+                    "ldquo" => Some('“'),
+                    "rdquo" => Some('”'),
+                    "rarr" => Some('→'),
+                    "larr" => Some('←'),
+                    "times" => Some('×'),
+                    _ => None,
+                }
+            };
+            c.map_or_else(|| caps[0].to_string(), String::from)
+        })
+        .into_owned()
+}
+
+/// Plain text built up from HTML, one block per line.
+struct Flattener {
+    out: String,
+    /// Open lists, innermost last: the next number for an ordered one, None for bullets.
+    lists: Vec<Option<usize>>,
+    /// Depth of `<pre>`, inside which whitespace is kept.
+    pre: usize,
+}
+
+impl Flattener {
+    fn at_line_start(&self) -> bool {
+        self.out.is_empty() || self.out.ends_with('\n')
+    }
+
+    fn line(&mut self) {
+        if !self.at_line_start() {
+            self.out.push('\n');
+        }
+    }
+
+    fn inline(&mut self, text: &str) {
+        if !self.at_line_start() && !self.out.ends_with(' ') && !text.starts_with(' ') {
+            self.out.push(' ');
+        }
+        self.out.push_str(text);
+    }
+
+    fn text(&mut self, raw: &str) {
+        let decoded = decode_entities(raw);
+        if self.pre > 0 {
+            self.out.push_str(&decoded);
+            return;
+        }
+        let collapsed = SPACES.replace_all(&decoded, " ");
+        let t = if self.at_line_start() || self.out.ends_with(' ') {
+            collapsed.trim_start()
+        } else {
+            &collapsed
+        };
+        self.out.push_str(t);
+    }
+
+    fn tag(&mut self, tag: &str) {
+        let Some(caps) = TAG_NAME.captures(tag) else {
+            return;
+        };
+        let name = caps[1].to_ascii_lowercase();
+        let closing = tag.starts_with("</");
+        match name.as_str() {
+            "br" => self.out.push('\n'),
+            "p" | "div" | "tr" | "blockquote" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                self.line()
+            }
+            "pre" => {
+                self.line();
+                if closing {
+                    self.pre = self.pre.saturating_sub(1);
+                } else {
+                    self.pre += 1;
+                }
+            }
+            "ul" | "ol" => {
+                self.line();
+                if closing {
+                    self.lists.pop();
+                } else {
+                    self.lists.push((name == "ol").then_some(1));
+                }
+            }
+            "li" => {
+                self.line();
+                if closing {
+                    return;
+                }
+                let depth = self.lists.len().saturating_sub(1);
+                let marker = match self.lists.last_mut() {
+                    Some(Some(n)) => {
+                        *n += 1;
+                        format!("{}. ", *n - 1)
+                    }
+                    _ => "- ".to_string(),
+                };
+                self.out.push_str(&"  ".repeat(depth));
+                self.out.push_str(&marker);
+            }
+            "td" | "th" if !closing && !self.at_line_start() => self.out.push_str(" | "),
+            "img" => self.inline(&image_text(tag)),
+            _ => {}
+        }
+    }
+}
+
+/// Rich text as plain text for the terminal: lines kept, lists numbered or bulleted by depth, and
+/// images named by attachment ID.
 pub fn to_text(text: &str) -> String {
     if !text.contains('<') {
-        return text.trim().to_string();
+        return MARKDOWN_IMAGE
+            .replace_all(text.trim(), "[image: attachment $1]")
+            .into_owned();
     }
-    let t = TAG_IMAGE.replace_all(text, "\n\n![]($1)\n\n");
-    let t = TAG_BREAK.replace_all(&t, "\n");
-    let t = TAG_BLOCK_END.replace_all(&t, "\n");
-    let t = TAG_ITEM.replace_all(&t, "- ");
-    let t = TAG_ANY.replace_all(&t, "");
-    let t = t
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#x27;", "'")
-        .replace("&amp;", "&");
-    let lines: Vec<&str> = t.lines().map(str::trim_end).collect();
+    let mut f = Flattener {
+        out: String::new(),
+        lists: Vec::new(),
+        pre: 0,
+    };
+    for token in TOKEN.find_iter(text) {
+        let t = token.as_str();
+        if t.starts_with('<') {
+            f.tag(t);
+        } else {
+            f.text(t);
+        }
+    }
+    let lines: Vec<&str> = f.out.lines().map(str::trim_end).collect();
     BLANK_LINES
         .replace_all(&lines.join("\n"), "\n\n")
         .trim()
@@ -202,10 +350,40 @@ mod tests {
     fn rich_text_reads_as_plain_text() {
         assert_eq!(to_text("  plain\n"), "plain");
         assert_eq!(
-            to_text(
-                "<p>Step &amp; check</p><img src=\"index.php?/attachments/get/55\" /><blockquote>Shown<br/>twice</blockquote><ul><li>a</li><li>b</li></ul>"
-            ),
-            "Step & check\n\n![](index.php?/attachments/get/55)\n\nShown\ntwice\n- a\n- b"
+            to_text("<p>Step &amp; check&nbsp;&#8594;</p><blockquote>Shown<br/>twice</blockquote>"),
+            "Step & check →\nShown\ntwice"
+        );
+    }
+
+    #[test]
+    fn lists_keep_their_numbers_and_nesting() {
+        let html = "<ol><li>Open the page</li><li>Sign in shows<ul><li>Email and password\
+                    <img src=\"index.php?/attachments/get/451#_t=17\" data-attachment-id=\"451\"></li>\
+                    </ul></li><li>Done</li></ol><p><img src=\"index.php?/attachments/get/618\"></p>";
+        assert_eq!(
+            to_text(html),
+            "1. Open the page\n2. Sign in shows\n  - Email and password [image: attachment 451]\n\
+             3. Done\n[image: attachment 618]"
+        );
+    }
+
+    #[test]
+    fn images_name_their_attachment() {
+        assert_eq!(
+            to_text("See ![](index.php?/attachments/get/9#_t=1) here"),
+            "See [image: attachment 9] here"
+        );
+        assert_eq!(
+            to_text("<img src=\"https://x/y.png\">"),
+            "[image: https://x/y.png]"
+        );
+    }
+
+    #[test]
+    fn preformatted_text_keeps_its_lines() {
+        assert_eq!(
+            to_text("<p>Log:</p><pre>a  b\nc</pre><p>after</p>"),
+            "Log:\na  b\nc\nafter"
         );
     }
 }
