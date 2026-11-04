@@ -1,12 +1,13 @@
 use anyhow::Result;
 use serde_json::Value;
 
+use crate::api::statuses::Statuses;
 use crate::api::{self, with_params};
 use crate::cli::{PlanCommand, PlanListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
 use crate::markup;
-use crate::output::{counts, date, note_more, print_json, print_table, table, text};
+use crate::output::{date, note_more, print_json, print_table, table, text};
 use crate::project::{self, completed_param};
 
 pub fn run(ctx: &Ctx, cmd: PlanCommand) -> Result<()> {
@@ -39,6 +40,7 @@ fn list(ctx: &Ctx, args: &PlanListArgs) -> Result<()> {
     if ctx.json {
         return print_json(&page.items);
     }
+    let statuses = Statuses::fetch(&ctx.client)?;
     let rows: Vec<Vec<String>> = page
         .items
         .iter()
@@ -47,7 +49,12 @@ fn list(ctx: &Ctx, args: &PlanListArgs) -> Result<()> {
             if p["is_completed"].as_bool() == Some(true) {
                 name.push_str(" (completed)");
             }
-            vec![text(&p["id"]), date(&p["created_on"]), counts(p), name]
+            vec![
+                text(&p["id"]),
+                date(&p["created_on"]),
+                statuses.tally(p),
+                name,
+            ]
         })
         .collect();
     print_table(&rows, "No plans found.");
@@ -88,6 +95,7 @@ fn view(ctx: &Ctx, plan: &str) -> Result<()> {
     if ctx.json {
         return print_json(&p);
     }
+    let statuses = Statuses::fetch(&ctx.client)?;
     println!("{id}  {}", text(&p["name"]));
     println!("{}", ctx.web_url(&format!("plans/view/{id}")));
     let state = if p["is_completed"].as_bool() == Some(true) {
@@ -97,7 +105,7 @@ fn view(ctx: &Ctx, plan: &str) -> Result<()> {
     };
     let mut rows = vec![
         vec!["State".to_string(), state.to_string()],
-        vec!["Tests".to_string(), counts(&p)],
+        vec!["Tests".to_string(), statuses.tally(&p)],
         vec!["Created".to_string(), date(&p["created_on"])],
     ];
     if !p["milestone_id"].is_null() {
@@ -113,7 +121,13 @@ fn view(ctx: &Ctx, plan: &str) -> Result<()> {
         println!("\nRuns");
         let rows: Vec<Vec<String>> = runs
             .iter()
-            .map(|r| vec![format!("R{}", text(&r["id"])), counts(r), run_name(r)])
+            .map(|r| {
+                vec![
+                    format!("R{}", text(&r["id"])),
+                    statuses.tally(r),
+                    run_name(r),
+                ]
+            })
             .collect();
         println!("{}", table(&rows, "  "));
     }

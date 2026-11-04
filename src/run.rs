@@ -1,11 +1,12 @@
 use anyhow::Result;
 
+use crate::api::statuses::Statuses;
 use crate::api::{self, Page, with_params};
 use crate::cli::{RunCommand, RunListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
 use crate::markup;
-use crate::output::{counts, date, note_more, print_json, print_table, table, text};
+use crate::output::{date, note_more, print_json, print_table, table, text};
 use crate::plan;
 use crate::project::{self, completed_param};
 
@@ -44,6 +45,7 @@ fn list(ctx: &Ctx, args: &RunListArgs) -> Result<()> {
     if ctx.json {
         return print_json(&page.items);
     }
+    let statuses = Statuses::fetch(&ctx.client)?;
     let rows: Vec<Vec<String>> = page
         .items
         .iter()
@@ -52,7 +54,7 @@ fn list(ctx: &Ctx, args: &RunListArgs) -> Result<()> {
             if r["is_completed"].as_bool() == Some(true) {
                 name.push_str(" (completed)");
             }
-            vec![format!("R{}", text(&r["id"])), counts(r), name]
+            vec![format!("R{}", text(&r["id"])), statuses.tally(r), name]
         })
         .collect();
     let empty = if args.plan.is_some() {
@@ -71,6 +73,7 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
     if ctx.json {
         return print_json(&r);
     }
+    let statuses = Statuses::fetch(&ctx.client)?;
     println!("R{id}  {}", plan::run_name(&r));
     println!("{}", ctx.web_url(&format!("runs/view/{id}")));
     let state = if r["is_completed"].as_bool() == Some(true) {
@@ -80,7 +83,7 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
     };
     let mut rows = vec![
         vec!["State".to_string(), state.to_string()],
-        vec!["Tests".to_string(), counts(&r)],
+        vec!["Tests".to_string(), statuses.tally(&r)],
         vec!["Created".to_string(), date(&r["created_on"])],
     ];
     for (label, key) in [

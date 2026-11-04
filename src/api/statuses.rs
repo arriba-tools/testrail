@@ -45,7 +45,13 @@ impl Statuses {
 
     /// The label TestRail shows for `id`.
     pub fn label(&self, id: &Value) -> String {
-        let Some(id) = id.as_i64() else {
+        // Step results carry their status as a numeric string.
+        let id = match id {
+            Value::Number(n) => n.as_i64(),
+            Value::String(s) => s.trim().parse().ok(),
+            _ => None,
+        };
+        let Some(id) = id else {
             return String::new();
         };
         self.0
@@ -53,6 +59,35 @@ impl Statuses {
             .find(|s| s["id"].as_i64() == Some(id))
             .and_then(|s| s["label"].as_str().or(s["name"].as_str()))
             .map_or_else(|| format!("status {id}"), str::to_string)
+    }
+
+    /// A run or plan's tallies, as in `12 passed, 1 failed, 4 not applicable`, from its `*_count`
+    /// fields. Custom status N is counted in `custom_statusN_count` and has ID 5 + N.
+    pub fn tally(&self, v: &Value) -> String {
+        let get = |k: &str| v[k].as_u64().unwrap_or(0);
+        let mut parts: Vec<String> = [
+            ("passed", "passed_count"),
+            ("blocked", "blocked_count"),
+            ("retest", "retest_count"),
+            ("failed", "failed_count"),
+            ("untested", "untested_count"),
+        ]
+        .iter()
+        .filter(|(_, k)| get(k) > 0)
+        .map(|(name, k)| format!("{} {name}", get(k)))
+        .collect();
+        for n in 1..=7 {
+            let count = get(&format!("custom_status{n}_count"));
+            if count > 0 {
+                let label = self.label(&json!(5 + n)).to_lowercase();
+                parts.push(format!("{count} {label}"));
+            }
+        }
+        if parts.is_empty() {
+            "no tests".to_string()
+        } else {
+            parts.join(", ")
+        }
     }
 
     /// The ID for a status given by ID, name, or label, ignoring case.
@@ -103,6 +138,7 @@ mod tests {
         assert_eq!(statuses.label(&json!(2)), "Blocked");
         assert_eq!(statuses.label(&json!(9)), "status 9");
         assert_eq!(statuses.label(&json!(null)), "");
+        assert_eq!(statuses.label(&json!("5")), "Failed");
         let err = statuses.id("nope").unwrap_err().to_string();
         assert!(
             err.contains("passed, blocked, untested, retest, failed"),
@@ -124,5 +160,22 @@ mod tests {
         assert_eq!(resolve(&client, "failed").unwrap(), 5);
         assert_eq!(resolve(&client, "in progress").unwrap(), 6);
         mock.assert();
+    }
+
+    #[test]
+    fn tallies_name_custom_statuses() {
+        let statuses = Statuses(vec![
+            json!({"id": 1, "name": "passed", "label": "Passed"}),
+            json!({"id": 6, "name": "not_applicable", "label": "Not Applicable"}),
+        ]);
+        let run = json!({
+            "passed_count": 12, "failed_count": 1, "untested_count": 27,
+            "blocked_count": 0, "custom_status1_count": 4, "custom_status2_count": 3
+        });
+        assert_eq!(
+            statuses.tally(&run),
+            "12 passed, 1 failed, 27 untested, 4 not applicable, 3 status 7"
+        );
+        assert_eq!(statuses.tally(&json!({})), "no tests");
     }
 }

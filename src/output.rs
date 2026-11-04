@@ -122,33 +122,6 @@ pub fn first_line(text: &str, max: usize) -> String {
     }
 }
 
-/// A run or plan's tallies, as in `12 passed, 1 failed, 27 untested`, from its `*_count` fields.
-pub fn counts(v: &Value) -> String {
-    let get = |k: &str| v[k].as_u64().unwrap_or(0);
-    let mut parts: Vec<String> = [
-        ("passed", "passed_count"),
-        ("blocked", "blocked_count"),
-        ("retest", "retest_count"),
-        ("failed", "failed_count"),
-        ("untested", "untested_count"),
-    ]
-    .iter()
-    .filter(|(_, k)| get(k) > 0)
-    .map(|(name, k)| format!("{} {name}", get(k)))
-    .collect();
-    let custom: u64 = (1..=7)
-        .map(|i| get(&format!("custom_status{i}_count")))
-        .sum();
-    if custom > 0 {
-        parts.push(format!("{custom} other"));
-    }
-    if parts.is_empty() {
-        "no tests".to_string()
-    } else {
-        parts.join(", ")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,15 +159,5 @@ mod tests {
         assert_eq!(plural(2, "case"), "2 cases");
         assert_eq!(first_line("\n  hello there\nmore", 5), "hell…");
         assert_eq!(first_line("hi", 5), "hi");
-    }
-
-    #[test]
-    fn counts_list_nonzero_tallies() {
-        let run = json!({
-            "passed_count": 12, "failed_count": 1, "untested_count": 27,
-            "blocked_count": 0, "custom_status2_count": 3
-        });
-        assert_eq!(counts(&run), "12 passed, 1 failed, 27 untested, 3 other");
-        assert_eq!(counts(&json!({})), "no tests");
     }
 }
