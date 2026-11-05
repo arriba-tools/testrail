@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::api::statuses::Statuses;
-use crate::api::{self, with_params};
+use crate::api::{self, Client, with_params};
 use crate::case;
 use crate::cli::{TestCommand, TestListArgs, TestViewArgs};
 use crate::context::Ctx;
@@ -19,8 +19,41 @@ pub fn run(ctx: &Ctx, cmd: TestCommand) -> Result<()> {
 }
 
 fn list(ctx: &Ctx, args: &TestListArgs) -> Result<()> {
-    let run = ids::parse(&args.run, Kind::Run)?;
     let statuses = Statuses::fetch(&ctx.client)?;
+    let (tests, more) = gather(&ctx.client, args, &statuses)?;
+    if ctx.json {
+        let items: Vec<&Value> = tests.iter().map(|(t, _)| t).collect();
+        return print_json(&items);
+    }
+    let rows: Vec<Vec<String>> = tests
+        .iter()
+        .map(|(t, run)| {
+            let mut row = vec![
+                format!("T{}", text(&t["id"])),
+                statuses.label(&t["status_id"]),
+                format!("C{}", text(&t["case_id"])),
+            ];
+            if let Some(run) = run {
+                row.push(run.clone());
+            }
+            row.push(text(&t["title"]));
+            row
+        })
+        .collect();
+    print_table(&rows, "No tests found.");
+    note_more(more, tests.len());
+    Ok(())
+}
+
+/// A test, with its run's label when the list spans a plan's runs.
+type Listed = (Value, Option<String>);
+
+/// The tests `args` asks for, and whether more remained past the limit.
+fn gather(
+    client: &Client,
+    args: &TestListArgs,
+    statuses: &Statuses,
+) -> Result<(Vec<Listed>, bool)> {
     let mut params = Vec::new();
     if !args.status.is_empty() {
         let wanted = args
@@ -30,26 +63,51 @@ fn list(ctx: &Ctx, args: &TestListArgs) -> Result<()> {
             .collect::<Result<Vec<_>>>()?;
         params.push(("status_id", wanted.join(",")));
     }
-    let endpoint = with_params(&format!("get_tests/{run}"), &params);
-    let page = api::list(&ctx.client, &endpoint, "tests", args.limit.get())?;
-    if ctx.json {
-        return print_json(&page.items);
+    let case = args
+        .case
+        .as_deref()
+        .map(|c| ids::parse(c, Kind::Case))
+        .transpose()?;
+    let runs: Vec<(u64, Option<String>)> = match (&args.run, &args.plan) {
+        (Some(r), _) => vec![(ids::parse(r, Kind::Run)?, None)],
+        (None, Some(p)) => {
+            let id = ids::parse(p, Kind::Plan)?;
+            plan::runs(&client.get(&format!("get_plan/{id}"))?)
+                .iter()
+                .filter_map(|r| Some((r["id"].as_u64()?, Some(run_label(r)))))
+                .collect()
+        }
+        (None, None) => unreachable!("clap requires a run or --plan"),
+    };
+    let limit = args.limit.get();
+    // A case filter runs here, and a plan spans runs, so either reads every test before the limit.
+    let whole = case.is_some() || args.plan.is_some();
+    let mut tests = Vec::new();
+    let mut more = false;
+    for (run, label) in runs {
+        let endpoint = with_params(&format!("get_tests/{run}"), &params);
+        let page = api::list(client, &endpoint, "tests", if whole { None } else { limit })?;
+        more |= page.more;
+        tests.extend(
+            page.items
+                .into_iter()
+                .filter(|t| case.is_none_or(|c| t["case_id"].as_u64() == Some(c)))
+                .map(|t| (t, label.clone())),
+        );
     }
-    let rows: Vec<Vec<String>> = page
-        .items
-        .iter()
-        .map(|t| {
-            vec![
-                format!("T{}", text(&t["id"])),
-                statuses.label(&t["status_id"]),
-                format!("C{}", text(&t["case_id"])),
-                text(&t["title"]),
-            ]
-        })
-        .collect();
-    print_table(&rows, "No tests found.");
-    note_more(page.more, page.items.len());
-    Ok(())
+    if whole && let Some(l) = limit {
+        more = tests.len() > l;
+        tests.truncate(l);
+    }
+    Ok((tests, more))
+}
+
+/// A run as a plan's test list names it: its ID and, when it has one, its configuration.
+fn run_label(run: &Value) -> String {
+    match run["config"].as_str().filter(|c| !c.is_empty()) {
+        Some(config) => format!("R{} {config}", text(&run["id"])),
+        None => format!("R{}", text(&run["id"])),
+    }
 }
 
 fn view(ctx: &Ctx, args: &TestViewArgs) -> Result<()> {
@@ -143,7 +201,70 @@ fn result_text(r: &Value, statuses: &Statuses) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Server;
     use serde_json::json;
+
+    fn list_args(run: Option<&str>, plan: Option<&str>, case: Option<&str>) -> TestListArgs {
+        TestListArgs {
+            run: run.map(str::to_string),
+            plan: plan.map(str::to_string),
+            case: case.map(str::to_string),
+            status: Vec::new(),
+            limit: crate::cli::LimitArgs {
+                limit: 50,
+                all: false,
+            },
+        }
+    }
+
+    #[test]
+    fn plans_find_a_case_across_their_runs() {
+        let mut server = Server::new();
+        server
+            .mock("GET", "/index.php?/api/v2/get_plan/91")
+            .with_body(
+                json!({"entries": [{"id": "e", "runs": [
+                    {"id": 92, "config": "Windows"}, {"id": 93, "config": "macOS ARM"}
+                ]}]})
+                .to_string(),
+            )
+            .create();
+        for (run, tests) in [
+            (
+                92,
+                json!([{"id": 1782, "case_id": 52}, {"id": 1783, "case_id": 53}]),
+            ),
+            (93, json!([{"id": 1900, "case_id": 52}])),
+        ] {
+            server
+                .mock(
+                    "GET",
+                    format!("/index.php?/api/v2/get_tests/{run}&limit=250&offset=0").as_str(),
+                )
+                .with_body(json!({"tests": tests, "_links": {"next": null}}).to_string())
+                .create();
+        }
+        let client = Client::for_tests(&server.url());
+        let statuses = Statuses::builtin();
+        let (tests, more) = gather(
+            &client,
+            &list_args(None, Some("91"), Some("C52")),
+            &statuses,
+        )
+        .unwrap();
+        assert!(!more);
+        let found: Vec<(u64, String)> = tests
+            .iter()
+            .map(|(t, run)| (t["id"].as_u64().unwrap(), run.clone().unwrap()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                (1782, "R92 Windows".to_string()),
+                (1900, "R93 macOS ARM".to_string())
+            ]
+        );
+    }
 
     #[test]
     fn results_show_version_comment_and_step_outcomes() {

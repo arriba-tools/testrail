@@ -339,9 +339,18 @@ pub enum TestCommand {
 }
 
 #[derive(Args)]
+#[command(group = clap::ArgGroup::new("scope").required(true).args(["run", "plan"]))]
 pub struct TestListArgs {
     /// Run ID, such as R201, or its URL
-    pub run: String,
+    pub run: Option<String>,
+
+    /// Plan ID or URL, for the tests in every run inside it
+    #[arg(long, value_name = "PLAN")]
+    pub plan: Option<String>,
+
+    /// Only tests of this case, such as C52
+    #[arg(short, long, value_name = "CASE")]
+    pub case: Option<String>,
 
     /// Only tests with this status, by name or ID, repeatable or comma-separated
     #[arg(short, long, value_name = "STATUS", value_delimiter = ',')]
@@ -589,6 +598,19 @@ mod tests {
         assert!(parse(&[]).is_err());
         assert!(parse(&["--test", "T1", "--run", "R1", "--case", "C1"]).is_err());
         assert!(parse(&["--test", "T1", "--step-image", "1=a.png"]).is_err());
+    }
+
+    #[test]
+    fn test_list_takes_a_run_or_a_plan() {
+        let parse = |args: &[&str]| {
+            let mut full = vec!["testrail-arriba", "test", "list"];
+            full.extend_from_slice(args);
+            Cli::try_parse_from(full)
+        };
+        assert!(parse(&["R92"]).is_ok());
+        assert!(parse(&["--plan", "91", "--case", "C52"]).is_ok());
+        assert!(parse(&["R92", "--plan", "91"]).is_err());
+        assert!(parse(&["--case", "C52"]).is_err());
     }
 
     #[test]
