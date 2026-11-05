@@ -33,8 +33,23 @@ fn list(ctx: &Ctx, args: &CaseListArgs) -> Result<()> {
     if let Some(filter) = &args.filter {
         params.push(("filter", filter.clone()));
     }
+    if let Some(reference) = &args.reference {
+        params.push(("refs", reference.clone()));
+    }
     let endpoint = with_params(&format!("get_cases/{project}"), &params);
-    let page = api::list(&ctx.client, &endpoint, "cases", args.limit.get())?;
+    let limit = args.limit.get();
+    // A text search runs here over whole cases, so it reads them all before the limit applies.
+    let fetch_limit = if args.grep.is_some() { None } else { limit };
+    let mut page = api::list(&ctx.client, &endpoint, "cases", fetch_limit)?;
+    if let Some(needle) = &args.grep {
+        let needle = needle.to_lowercase();
+        page.items
+            .retain(|c| starts_a_word(&searchable(c), &needle));
+        if let Some(l) = limit {
+            page.more = page.items.len() > l;
+            page.items.truncate(l);
+        }
+    }
     if ctx.json {
         return print_json(&page.items);
     }
@@ -71,6 +86,30 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
         println!("\n{IMAGE_HINT}");
     }
     Ok(())
+}
+
+/// A case's title and text as one lowercase string, for searching.
+fn searchable(case: &Value) -> String {
+    let mut parts = vec![
+        text(&case["title"]),
+        markup::to_text(&text(&case["custom_preconds"])),
+    ];
+    parts.extend(text_fields(case).into_iter().map(|(_, v)| v));
+    for (content, expected) in steps(case) {
+        parts.push(markup::to_text(&content));
+        parts.push(markup::to_text(&expected));
+    }
+    parts.join("\n").to_lowercase()
+}
+
+/// Whether `needle` appears where a word starts, so `sso` finds "SSO" but not "processor".
+fn starts_a_word(haystack: &str, needle: &str) -> bool {
+    haystack.match_indices(needle).any(|(i, _)| {
+        haystack[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric())
+    })
 }
 
 /// Printed after text that names attachment images, so the reader knows how to see them.
@@ -236,6 +275,31 @@ mod tests {
         );
         assert!(markup::has_attachment_image(&body));
         assert_eq!(field_label("custom_x"), "X");
+    }
+
+    #[test]
+    fn searches_cover_title_preconditions_steps_and_custom_text() {
+        let case = json!({
+            "title": "Login",
+            "custom_preconds": "<p>Signed <b>out</b></p>",
+            "custom_case_background": "Uses SSO",
+            "custom_steps_separated": [{"content": "Open &amp; click", "expected": "Dialog"}]
+        });
+        let text = searchable(&case);
+        for needle in ["login", "signed out", "sso", "open & click", "dialog"] {
+            assert!(text.contains(needle), "{needle} in {text}");
+        }
+    }
+
+    #[test]
+    fn searches_match_from_the_start_of_a_word() {
+        assert!(starts_a_word("login via sso", "sso"));
+        assert!(starts_a_word("(sso) and more", "sso"));
+        assert!(starts_a_word("logins fail", "log"));
+        assert!(!starts_a_word("the processor", "sso"));
+        assert!(!starts_a_word("associated with", "sso"));
+        assert!(starts_a_word("associated; sso", "sso"));
+        assert!(starts_a_word("sso", "sso"));
     }
 
     #[test]

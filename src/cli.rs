@@ -222,6 +222,15 @@ pub struct CaseListArgs {
     #[arg(short, long, value_name = "TEXT")]
     pub filter: Option<String>,
 
+    /// Only cases with this reference, such as a Jira key
+    #[arg(long = "ref", value_name = "REF")]
+    pub reference: Option<String>,
+
+    /// Only cases whose title, preconditions, steps, or custom text have a word starting with this
+    /// text, ignoring case, which reads every case in the project
+    #[arg(short, long, value_name = "TEXT")]
+    pub grep: Option<String>,
+
     #[command(flatten)]
     pub limit: LimitArgs,
 }

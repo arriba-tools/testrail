@@ -237,9 +237,8 @@ impl Flattener {
 /// images named by attachment ID.
 pub fn to_text(text: &str) -> String {
     if !text.contains('<') {
-        return MARKDOWN_IMAGE
-            .replace_all(text.trim(), "[image: attachment $1]")
-            .into_owned();
+        let images = MARKDOWN_IMAGE.replace_all(text.trim(), "[image: attachment $1]");
+        return decode_entities(&images);
     }
     let mut f = Flattener {
         out: String::new(),
@@ -354,6 +353,7 @@ mod tests {
     #[test]
     fn rich_text_reads_as_plain_text() {
         assert_eq!(to_text("  plain\n"), "plain");
+        assert_eq!(to_text("Open &amp; click"), "Open & click");
         assert_eq!(
             to_text("<p>Step &amp; check&nbsp;&#8594;</p><blockquote>Shown<br/>twice</blockquote>"),
             "Step & check →\nShown\ntwice"
