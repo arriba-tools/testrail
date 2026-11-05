@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::api::statuses::Statuses;
+use crate::api::statuses::{Resolver, Statuses};
 use crate::api::{self, Client, with_params};
 use crate::case;
 use crate::cli::{TestCommand, TestListArgs, TestViewArgs};
@@ -19,12 +19,13 @@ pub fn run(ctx: &Ctx, cmd: TestCommand) -> Result<()> {
 }
 
 fn list(ctx: &Ctx, args: &TestListArgs) -> Result<()> {
-    let statuses = Statuses::fetch(&ctx.client)?;
-    let (tests, more) = gather(&ctx.client, args, &statuses)?;
+    let mut statuses = Resolver::new(&ctx.client);
+    let (tests, more) = gather(&ctx.client, args, &mut statuses)?;
     if ctx.json {
         let items: Vec<&Value> = tests.iter().map(|(t, _)| t).collect();
         return print_json(&items);
     }
+    let statuses = statuses.statuses()?;
     let rows: Vec<Vec<String>> = tests
         .iter()
         .map(|(t, run)| {
@@ -52,7 +53,7 @@ type Listed = (Value, Option<String>);
 fn gather(
     client: &Client,
     args: &TestListArgs,
-    statuses: &Statuses,
+    statuses: &mut Resolver,
 ) -> Result<(Vec<Listed>, bool)> {
     let mut params = Vec::new();
     if !args.status.is_empty() {
@@ -237,11 +238,11 @@ mod tests {
                 .create();
         }
         let client = Client::for_tests(&server.url());
-        let statuses = Statuses::builtin();
+        let mut statuses = Resolver::new(&client);
         let (tests, more) = gather(
             &client,
             &list_args(None, Some("91"), Some("C52")),
-            &statuses,
+            &mut statuses,
         )
         .unwrap();
         assert!(!more);
@@ -326,5 +327,17 @@ mod tests {
             err.to_string().starts_with("No status named \"bogus\""),
             "{err}"
         );
+    }
+
+    #[test]
+    fn json_test_lists_skip_the_status_lookup() {
+        use crate::testing::{cli, get, page};
+        let mut s = Server::new();
+        get(
+            &mut s,
+            "get_tests/92&status_id=5&limit=50&offset=0",
+            page("tests", json!([{"id": 1789, "status_id": 5}])),
+        );
+        cli(&s, &["--json", "test", "list", "R92", "-s", "failed"]).unwrap();
     }
 }
