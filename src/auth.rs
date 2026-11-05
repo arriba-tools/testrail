@@ -119,7 +119,7 @@ fn login(site: Option<&str>, json: bool, args: LoginArgs) -> Result<()> {
     let me =
         current_user(&creds).with_context(|| format!("{} rejected the login", creds.site()))?;
     keyring::write(&keyring::service(&creds.site()), &creds.email, &creds.key)?;
-    let dir = config::dir().context("Could not find the home directory")?;
+    let dir = config::dir()?;
     let mut cfg = config::load(&dir)?;
     cfg.upsert(config::Login {
         url: creds.url.clone(),
@@ -131,7 +131,7 @@ fn login(site: Option<&str>, json: bool, args: LoginArgs) -> Result<()> {
 
 /// Forget a stored login and its key.
 fn logout(site: Option<&str>, json: bool, yes: bool) -> Result<()> {
-    let dir = config::dir().context("Could not find the home directory")?;
+    let dir = config::dir()?;
     let mut cfg = config::load(&dir)?;
     let login = cfg.select(site)?.clone();
     let question = format!("Log out {} from {}?", login.email, login.site());

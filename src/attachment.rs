@@ -67,7 +67,7 @@ fn attachment_id(v: &Value) -> String {
 }
 
 fn list(ctx: &Ctx, args: &HolderArgs) -> Result<()> {
-    let holder = holder(args)?.context("Pass --case, --run, --test, or --plan")?;
+    let holder = holder(args)?.expect("clap requires --case, --run, --test, or --plan");
     let items = attachments(&ctx.client, &holder)?;
     if ctx.json {
         return print_json(&items);

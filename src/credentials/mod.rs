@@ -116,7 +116,7 @@ fn from_env(
 
 /// The login `auth login` stored for `site`, or the current one.
 fn stored(site: Option<&str>) -> Result<Credentials> {
-    let dir = config::dir().context("Could not find the home directory")?;
+    let dir = config::dir()?;
     stored_in(&dir, site, &keyring::read)
 }
 

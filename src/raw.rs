@@ -1,7 +1,7 @@
 //! The `api` command: any endpoint, with the login and paths filled in.
 
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::Path;
 
 use crate::cli::ApiArgs;
@@ -23,10 +23,9 @@ pub fn run(ctx: &Ctx, args: ApiArgs) -> Result<()> {
             }
             ctx.client.get(&args.endpoint)?
         }
-        "POST" => ctx.client.post(
-            &args.endpoint,
-            &body.unwrap_or_else(|| Value::Object(Default::default())),
-        )?,
+        "POST" => ctx
+            .client
+            .post(&args.endpoint, &body.unwrap_or_else(|| json!({})))?,
         other => bail!("TestRail's API takes GET and POST, not {other}"),
     };
     print_json(&value)

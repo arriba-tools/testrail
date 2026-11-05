@@ -30,12 +30,13 @@ impl Login {
 }
 
 /// Where the config lives: `$XDG_CONFIG_HOME/testrail-arriba`, else `~/.config/testrail-arriba`.
-pub fn dir() -> Option<PathBuf> {
+pub fn dir() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
-        .or_else(|| std::env::home_dir().map(|h| h.join(".config")))?;
-    Some(base.join("testrail-arriba"))
+        .or_else(|| std::env::home_dir().map(|h| h.join(".config")))
+        .context("Could not find the home directory")?;
+    Ok(base.join("testrail-arriba"))
 }
 
 /// The config in `dir`, or an empty one when there is none yet.
