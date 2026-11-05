@@ -1,6 +1,6 @@
 [package]
 name = "testrail-arriba"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "TestRail CLI for plans, runs, cases, attachments, and step results written in Markdown with inline screenshots"
 license = "MIT"
