@@ -7,6 +7,7 @@
 use anyhow::Result;
 use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
 use regex::{Captures, Regex};
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 /// The `src` TestRail serves an attachment from, relative to the instance.
@@ -30,8 +31,12 @@ pub fn to_html(text: &str, image: &mut dyn FnMut(&str) -> Result<String>) -> Res
     if is_html(text) || text.trim().is_empty() {
         return Ok(text.to_string());
     }
+    let text = keep_backslashes(text);
     let mut events = Vec::new();
-    for event in Parser::new_ext(text, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH) {
+    for event in Parser::new_ext(
+        &text,
+        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH,
+    ) {
         events.push(match event {
             Event::Start(Tag::Image {
                 link_type,
@@ -52,6 +57,18 @@ pub fn to_html(text: &str, image: &mut dyn FnMut(&str) -> Result<String>) -> Res
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, events.into_iter());
     Ok(tidy(&html))
+}
+
+static IMAGE_DESTINATION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(!\[[^\]]*\]\(\s*)(<[^>\n]*>|[^\s)]+)").unwrap());
+
+/// Text with the backslashes in image destinations doubled. Markdown reads a backslash before
+/// punctuation as an escape, which would drop the separator from a Windows path such as
+/// `C:\Temp\.tmp1\shot.png`.
+fn keep_backslashes(text: &str) -> Cow<'_, str> {
+    IMAGE_DESTINATION.replace_all(text, |caps: &Captures| {
+        format!("{}{}", &caps[1], caps[2].replace('\\', "\\\\"))
+    })
 }
 
 static IMAGE_PARAGRAPH: LazyLock<Regex> =
@@ -418,5 +435,20 @@ mod tests {
             to_text("<table><tr><td>a</td><td>b</td></tr></table><h2>Head</h2>"),
             "a | b\nHead"
         );
+    }
+
+    #[test]
+    fn windows_paths_keep_their_backslashes() {
+        let mut seen = Vec::new();
+        let mut upload = |src: &str| {
+            seen.push(src.to_string());
+            Ok(attachment_src("1"))
+        };
+        to_html(
+            "![](C:\\Temp\\.tmp1\\a.png) and ![x](<C:\\my shots\\_b.png> \"t\")",
+            &mut upload,
+        )
+        .unwrap();
+        assert_eq!(seen, vec!["C:\\Temp\\.tmp1\\a.png", "C:\\my shots\\_b.png"]);
     }
 }
