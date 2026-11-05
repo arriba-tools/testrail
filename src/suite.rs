@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::api;
 use crate::cli::SuiteCommand;
 use crate::context::Ctx;
-use crate::output::{print_json, print_table, text};
+use crate::output::{mark_completed, print_json, print_table, text};
 use crate::project;
 
 pub fn run(ctx: &Ctx, cmd: SuiteCommand) -> Result<()> {
@@ -27,10 +27,7 @@ pub fn run(ctx: &Ctx, cmd: SuiteCommand) -> Result<()> {
                     if s["is_baseline"].as_bool() == Some(true) {
                         name.push_str(" (baseline)");
                     }
-                    if s["is_completed"].as_bool() == Some(true) {
-                        name.push_str(" (completed)");
-                    }
-                    vec![format!("S{}", text(&s["id"])), name]
+                    vec![format!("S{}", text(&s["id"])), mark_completed(name, s)]
                 })
                 .collect();
             print_table(&rows, "No suites found.");

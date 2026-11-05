@@ -5,8 +5,9 @@ use crate::api::{self, Page, with_params};
 use crate::cli::{RunCommand, RunListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
-use crate::markup;
-use crate::output::{date, note_more, print_json, print_table, table, text};
+use crate::output::{
+    date, mark_completed, note_more, print_json, print_rich, print_table, state_row, table, text,
+};
 use crate::plan;
 use crate::project::{self, completed_param};
 
@@ -50,11 +51,11 @@ fn list(ctx: &Ctx, args: &RunListArgs) -> Result<()> {
         .items
         .iter()
         .map(|r| {
-            let mut name = plan::run_name(r);
-            if r["is_completed"].as_bool() == Some(true) {
-                name.push_str(" (completed)");
-            }
-            vec![format!("R{}", text(&r["id"])), statuses.tally(r), name]
+            vec![
+                format!("R{}", text(&r["id"])),
+                statuses.tally(r),
+                mark_completed(plan::run_name(r), r),
+            ]
         })
         .collect();
     let empty = if args.plan.is_some() {
@@ -74,15 +75,8 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
         return print_json(&r);
     }
     let statuses = Statuses::fetch(&ctx.client)?;
-    println!("R{id}  {}", plan::run_name(&r));
-    println!("{}", ctx.web_url(&format!("runs/view/{id}")));
-    let state = if r["is_completed"].as_bool() == Some(true) {
-        "completed"
-    } else {
-        "active"
-    };
     let mut rows = vec![
-        vec!["State".to_string(), state.to_string()],
+        state_row(&r),
         vec!["Tests".to_string(), statuses.tally(&r)],
         vec!["Created".to_string(), date(&r["created_on"])],
     ];
@@ -95,11 +89,10 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
             rows.push(vec![label.to_string(), text(&r[key])]);
         }
     }
+    println!("R{id}  {}", plan::run_name(&r));
+    println!("{}", ctx.web_url(&format!("runs/view/{id}")));
     println!("{}", table(&rows, "  "));
-    let description = markup::to_text(&text(&r["description"]));
-    if !description.is_empty() {
-        println!("\n{description}");
-    }
+    print_rich(&r["description"]);
     Ok(())
 }
 

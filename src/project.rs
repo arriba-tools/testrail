@@ -5,8 +5,7 @@ use crate::api::{self, Client, with_params};
 use crate::cli::{ProjectCommand, StateArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
-use crate::markup;
-use crate::output::{print_json, print_table, table, text};
+use crate::output::{mark_completed, print_json, print_rich, print_table, state_row, table, text};
 
 pub fn run(ctx: &Ctx, cmd: ProjectCommand) -> Result<()> {
     match cmd {
@@ -32,14 +31,10 @@ fn list(ctx: &Ctx, state: &StateArgs) -> Result<()> {
     let rows: Vec<Vec<String>> = projects
         .iter()
         .map(|p| {
-            let mut name = text(&p["name"]);
-            if p["is_completed"].as_bool() == Some(true) {
-                name.push_str(" (completed)");
-            }
             vec![
                 text(&p["id"]),
                 suite_mode(&p["suite_mode"]).to_string(),
-                name,
+                mark_completed(text(&p["name"]), p),
             ]
         })
         .collect();
@@ -62,25 +57,17 @@ fn view(ctx: &Ctx, project: &str) -> Result<()> {
     if ctx.json {
         return print_json(&p);
     }
-    println!("{}  {}", id, text(&p["name"]));
-    println!("{}", ctx.web_url(&format!("projects/overview/{id}")));
-    let state = if p["is_completed"].as_bool() == Some(true) {
-        "completed"
-    } else {
-        "active"
-    };
     let rows = vec![
         vec![
             "Suites".to_string(),
             suite_mode(&p["suite_mode"]).to_string(),
         ],
-        vec!["State".to_string(), state.to_string()],
+        state_row(&p),
     ];
+    println!("{id}  {}", text(&p["name"]));
+    println!("{}", ctx.web_url(&format!("projects/overview/{id}")));
     println!("{}", table(&rows, "  "));
-    let announcement = markup::to_text(&text(&p["announcement"]));
-    if !announcement.is_empty() {
-        println!("\n{announcement}");
-    }
+    print_rich(&p["announcement"]);
     Ok(())
 }
 

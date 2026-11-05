@@ -5,8 +5,9 @@ use crate::api::{self, with_params};
 use crate::cli::{MilestoneCommand, MilestoneListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
-use crate::markup;
-use crate::output::{day, print_json, print_table, table, text};
+use crate::output::{
+    day, mark_completed, print_json, print_rich, print_table, state_row, table, text,
+};
 use crate::project::{self, completed_param};
 
 pub fn run(ctx: &Ctx, cmd: MilestoneCommand) -> Result<()> {
@@ -39,10 +40,7 @@ fn list(ctx: &Ctx, args: &MilestoneListArgs) -> Result<()> {
 }
 
 fn row(m: &Value, indent: &str) -> Vec<String> {
-    let mut name = format!("{indent}{}", text(&m["name"]));
-    if m["is_completed"].as_bool() == Some(true) {
-        name.push_str(" (completed)");
-    }
+    let name = mark_completed(format!("{indent}{}", text(&m["name"])), m);
     let due = day(&m["due_on"]);
     let due = if due.is_empty() {
         due
@@ -58,14 +56,7 @@ fn view(ctx: &Ctx, milestone: &str) -> Result<()> {
     if ctx.json {
         return print_json(&m);
     }
-    println!("{id}  {}", text(&m["name"]));
-    println!("{}", ctx.web_url(&format!("milestones/view/{id}")));
-    let state = if m["is_completed"].as_bool() == Some(true) {
-        "completed"
-    } else {
-        "active"
-    };
-    let mut rows = vec![vec!["State".to_string(), state.to_string()]];
+    let mut rows = vec![state_row(&m)];
     for (label, key) in [("Starts", "start_on"), ("Due", "due_on")] {
         let value = day(&m[key]);
         if !value.is_empty() {
@@ -76,11 +67,10 @@ fn view(ctx: &Ctx, milestone: &str) -> Result<()> {
     if !refs.is_empty() {
         rows.push(vec!["Refs".to_string(), refs]);
     }
+    println!("{id}  {}", text(&m["name"]));
+    println!("{}", ctx.web_url(&format!("milestones/view/{id}")));
     println!("{}", table(&rows, "  "));
-    let description = markup::to_text(&text(&m["description"]));
-    if !description.is_empty() {
-        println!("\n{description}");
-    }
+    print_rich(&m["description"]);
     Ok(())
 }
 

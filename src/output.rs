@@ -3,6 +3,8 @@ use chrono::{Local, TimeZone};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::markup;
+
 /// Print a value as pretty JSON on stdout.
 pub fn print_json<T: Serialize + ?Sized>(value: &T) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
@@ -48,6 +50,36 @@ pub fn print_table(rows: &[Vec<String>], empty: &str) {
     } else {
         println!("{}", table(rows, ""));
     }
+}
+
+/// Print rich text as plain text after a blank line, unless there is none.
+pub fn print_rich(v: &Value) {
+    let text = markup::to_text(&text(v));
+    if !text.is_empty() {
+        println!("\n{text}");
+    }
+}
+
+fn is_completed(v: &Value) -> bool {
+    v["is_completed"].as_bool() == Some(true)
+}
+
+/// `name` marked as completed when `v` is, as lists show it.
+pub fn mark_completed(mut name: String, v: &Value) -> String {
+    if is_completed(v) {
+        name.push_str(" (completed)");
+    }
+    name
+}
+
+/// The State row of a view, for a project, milestone, plan, or run.
+pub fn state_row(v: &Value) -> Vec<String> {
+    let state = if is_completed(v) {
+        "completed"
+    } else {
+        "active"
+    };
+    vec!["State".to_string(), state.to_string()]
 }
 
 /// Note on stderr that a list stopped at its limit.

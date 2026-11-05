@@ -6,8 +6,9 @@ use crate::api::{self, with_params};
 use crate::cli::{PlanCommand, PlanListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
-use crate::markup;
-use crate::output::{date, note_more, print_json, print_table, table, text};
+use crate::output::{
+    date, mark_completed, note_more, print_json, print_rich, print_table, state_row, table, text,
+};
 use crate::project::{self, completed_param};
 
 pub fn run(ctx: &Ctx, cmd: PlanCommand) -> Result<()> {
@@ -45,15 +46,11 @@ fn list(ctx: &Ctx, args: &PlanListArgs) -> Result<()> {
         .items
         .iter()
         .map(|p| {
-            let mut name = text(&p["name"]);
-            if p["is_completed"].as_bool() == Some(true) {
-                name.push_str(" (completed)");
-            }
             vec![
                 text(&p["id"]),
                 date(&p["created_on"]),
                 statuses.tally(p),
-                name,
+                mark_completed(text(&p["name"]), p),
             ]
         })
         .collect();
@@ -96,26 +93,18 @@ fn view(ctx: &Ctx, plan: &str) -> Result<()> {
         return print_json(&p);
     }
     let statuses = Statuses::fetch(&ctx.client)?;
-    println!("{id}  {}", text(&p["name"]));
-    println!("{}", ctx.web_url(&format!("plans/view/{id}")));
-    let state = if p["is_completed"].as_bool() == Some(true) {
-        "completed"
-    } else {
-        "active"
-    };
     let mut rows = vec![
-        vec!["State".to_string(), state.to_string()],
+        state_row(&p),
         vec!["Tests".to_string(), statuses.tally(&p)],
         vec!["Created".to_string(), date(&p["created_on"])],
     ];
     if !p["milestone_id"].is_null() {
         rows.push(vec!["Milestone".to_string(), text(&p["milestone_id"])]);
     }
+    println!("{id}  {}", text(&p["name"]));
+    println!("{}", ctx.web_url(&format!("plans/view/{id}")));
     println!("{}", table(&rows, "  "));
-    let description = markup::to_text(&text(&p["description"]));
-    if !description.is_empty() {
-        println!("\n{description}");
-    }
+    print_rich(&p["description"]);
     let runs = runs(&p);
     if !runs.is_empty() {
         println!("\nRuns");
