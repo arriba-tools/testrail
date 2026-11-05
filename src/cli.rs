@@ -5,7 +5,8 @@ use std::path::PathBuf;
 #[command(
     name = "testrail-arriba",
     about = "TestRail workflows for people and coding agents",
-    version
+    version,
+    after_help = OBJECTS
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -23,6 +24,19 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub yes: bool,
 }
+
+/// How TestRail's objects relate, after the top-level help since that is what an agent reads first.
+const OBJECTS: &str = "\
+How TestRail fits together:
+  Project                              --project takes its ID or name
+  ├── Suite → Section → Case (C39)     the test and its steps: case view
+  ├── Milestone
+  ├── Plan → Run (R201)                a plan's runs: run list --plan
+  └── Run (R201)                       runs outside plans: run list -p
+        └── Test (T1001)               one case in either kind of run: test view
+              └── Result               added with result add, never edited
+
+IDs take these prefixes or the page's URL.";
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -566,5 +580,12 @@ mod tests {
         assert!(parse(&[]).is_err());
         assert!(parse(&["--test", "T1", "--run", "R1", "--case", "C1"]).is_err());
         assert!(parse(&["--test", "T1", "--step-image", "1=a.png"]).is_err());
+    }
+
+    #[test]
+    fn help_ends_with_the_object_model() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_help().to_string();
+        assert!(help.contains("How TestRail fits together:"), "{help}");
     }
 }
