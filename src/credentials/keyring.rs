@@ -189,9 +189,15 @@ fn write_platform(service: &str, account: &str, secret: &str) -> Result<()> {
 
 #[cfg(target_os = "linux")]
 fn delete_platform(service: &str, account: &str) -> Result<()> {
-    run_secret_tool(secret_tool(&[
+    let output = run_secret_tool(secret_tool(&[
         "clear", "service", service, "username", account,
     ]))?;
+    if !output.status.success() {
+        bail!(
+            "secret-tool clear failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
     Ok(())
 }
 
