@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::api::Client;
-use crate::api::statuses::{Resolver, Statuses};
+use crate::api::statuses::Resolver;
 use crate::attachment;
 use crate::case;
 use crate::cli::ResultAddArgs;
@@ -49,6 +49,8 @@ struct Prepared {
     payload: Value,
     run: u64,
     test: Option<u64>,
+    /// The label of the result's status.
+    status: String,
     images: Vec<Value>,
 }
 
@@ -84,7 +86,7 @@ pub fn run(ctx: &Ctx, args: &ResultAddArgs) -> Result<()> {
         }));
     }
     let test = result["test_id"].as_u64().or(prepared.test);
-    let status = Statuses::builtin().label(&result["status_id"]);
+    let status = &prepared.status;
     match test {
         Some(t) => {
             println!("✓ Added result {result_id} ({status}) to T{t}");
@@ -125,7 +127,8 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
     };
 
     let mut payload = Map::new();
-    payload.insert("status_id".into(), json!(statuses.id(&args.status)?));
+    let status_id = statuses.id(&args.status)?;
+    payload.insert("status_id".into(), json!(status_id));
     if let Some(html) = comment(args, cwd, &mut images)? {
         payload.insert("comment".into(), json!(html));
     }
@@ -201,6 +204,7 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
         payload: Value::Object(payload),
         run: target.run,
         test: target.test,
+        status: statuses.label(status_id)?,
         images: images.log,
     })
 }
@@ -743,10 +747,13 @@ mod tests {
         .unwrap();
         let client = Client::for_tests(&server.url());
         let mut a = args();
+        a.status = "not applicable".into();
         a.comment_file = Some("notes/comment.md".into());
         a.steps = Some("steps.json".into());
         let p = prepare(&client, &a, dir.path()).unwrap();
         statuses.assert();
+        assert_eq!(p.payload["status_id"], 6);
+        assert_eq!(p.status, "Not Applicable");
         assert_eq!(
             p.payload["comment"],
             "<p>See <img src=\"index.php?/attachments/get/57\" alt=\"\" /></p>"

@@ -129,15 +129,30 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// The instance's statuses, fetched on first use.
+    pub fn statuses(&mut self) -> Result<&Statuses> {
+        if self.fetched.is_none() {
+            self.fetched = Some(Statuses::fetch(self.client)?);
+        }
+        Ok(self.fetched.as_ref().expect("fetched above"))
+    }
+
     /// The ID for a status given by ID, name, or label.
     pub fn id(&mut self, text: &str) -> Result<i64> {
-        if let Ok(id) = Statuses::builtin().id(text) {
-            return Ok(id);
+        match Statuses::builtin().id(text) {
+            Ok(id) => Ok(id),
+            Err(_) => self.statuses()?.id(text),
         }
-        if let Some(fetched) = &self.fetched {
-            return fetched.id(text);
+    }
+
+    /// The label for a status ID, asking the instance only for one that is not a system status.
+    pub fn label(&mut self, id: i64) -> Result<String> {
+        let id = json!(id);
+        let builtin = Statuses::builtin();
+        if self.fetched.is_none() && builtin.all().iter().any(|s| s["id"] == id) {
+            return Ok(builtin.label(&id));
         }
-        self.fetched.insert(Statuses::fetch(self.client)?).id(text)
+        Ok(self.statuses()?.label(&id))
     }
 }
 
@@ -177,7 +192,15 @@ mod tests {
         let mut statuses = Resolver::new(&client);
         assert_eq!(statuses.id("failed").unwrap(), 5);
         assert_eq!(statuses.id("in progress").unwrap(), 6);
+        assert_eq!(statuses.label(6).unwrap(), "In Progress");
         mock.assert();
+    }
+
+    #[test]
+    fn system_labels_need_no_request() {
+        let server = Server::new();
+        let client = Client::for_tests(&server.url());
+        assert_eq!(Resolver::new(&client).label(2).unwrap(), "Blocked");
     }
 
     #[test]
