@@ -95,9 +95,8 @@ fn gather(
                 .map(|t| (t, label.clone())),
         );
     }
-    if whole && let Some(l) = limit {
-        more = tests.len() > l;
-        tests.truncate(l);
+    if whole {
+        more = api::cut(&mut tests, limit);
     }
     Ok((tests, more))
 }

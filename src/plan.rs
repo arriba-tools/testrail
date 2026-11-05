@@ -33,10 +33,7 @@ fn list(ctx: &Ctx, args: &PlanListArgs) -> Result<()> {
         let wanted = name.to_lowercase();
         page.items
             .retain(|p| text(&p["name"]).to_lowercase().contains(&wanted));
-        if let Some(l) = limit {
-            page.more = page.items.len() > l;
-            page.items.truncate(l);
-        }
+        page.more = api::cut(&mut page.items, limit);
     }
     if ctx.json {
         return print_json(&page.items);

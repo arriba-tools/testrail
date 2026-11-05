@@ -63,6 +63,13 @@ pub fn list(client: &Client, endpoint: &str, key: &str, limit: Option<usize>) ->
     }
 }
 
+/// Cut `items` to `limit`, as after a filter applied here, returning whether any were cut.
+pub fn cut<T>(items: &mut Vec<T>, limit: Option<usize>) -> bool {
+    let more = limit.is_some_and(|l| items.len() > l);
+    items.truncate(limit.unwrap_or(usize::MAX));
+    more
+}
+
 /// An endpoint with query parameters, which TestRail takes after `&` since its route already
 /// fills the query string.
 pub fn with_params(endpoint: &str, params: &[(&str, String)]) -> String {

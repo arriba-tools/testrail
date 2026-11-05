@@ -45,10 +45,7 @@ fn list(ctx: &Ctx, args: &CaseListArgs) -> Result<()> {
         let needle = needle.to_lowercase();
         page.items
             .retain(|c| starts_a_word(&searchable(c), &needle));
-        if let Some(l) = limit {
-            page.more = page.items.len() > l;
-            page.items.truncate(l);
-        }
+        page.more = api::cut(&mut page.items, limit);
     }
     if ctx.json {
         return print_json(&page.items);

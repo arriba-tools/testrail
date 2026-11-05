@@ -26,11 +26,7 @@ fn list(ctx: &Ctx, args: &RunListArgs) -> Result<()> {
             if let Some(completed) = args.state.is_completed() {
                 runs.retain(|r| r["is_completed"].as_bool() == Some(completed));
             }
-            let mut more = false;
-            if let Some(l) = args.limit.get() {
-                more = runs.len() > l;
-                runs.truncate(l);
-            }
+            let more = api::cut(&mut runs, args.limit.get());
             Page { items: runs, more }
         }
         (None, Some(p)) => {
