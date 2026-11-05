@@ -5,6 +5,7 @@ pub mod keyring;
 
 use anyhow::{Context, Result, bail};
 use base64::Engine;
+use std::path::Path;
 
 pub const URL: &str = "TESTRAIL_URL";
 pub const EMAIL: &str = "TESTRAIL_EMAIL";
@@ -116,9 +117,17 @@ pub fn from_env(
 /// The login `auth login` stored for `site`, or the current one.
 fn stored(site: Option<&str>) -> Result<Credentials> {
     let dir = config::dir().context("Could not find the home directory")?;
-    let cfg = config::load(&dir)?;
+    stored_in(&dir, site, &keyring::read)
+}
+
+/// The secret stored under a keyring service and account, as [`keyring::read`] returns it.
+type ReadSecret = dyn Fn(&str, &str) -> Result<Option<Vec<u8>>>;
+
+/// The login stored in the config under `dir`, with its key from `read`.
+fn stored_in(dir: &Path, site: Option<&str>, read: &ReadSecret) -> Result<Credentials> {
+    let cfg = config::load(dir)?;
     let login = cfg.select(site)?;
-    let raw = keyring::read(&keyring::service(&login.site()), &login.email)?.with_context(|| {
+    let raw = read(&keyring::service(&login.site()), &login.email)?.with_context(|| {
         format!(
             "The API key for {} on {} is missing from the keyring. Run `testrail-arriba auth login` again.",
             login.email,
@@ -234,6 +243,40 @@ mod tests {
     fn no_key_defers_to_the_stored_login() {
         let vars = env(&[(URL, "x.testrail.io"), (EMAIL, "me@x.com")]);
         assert!(from_env(&|k| vars.get(k).cloned(), None).unwrap().is_none());
+    }
+
+    #[test]
+    fn stored_logins_take_their_key_from_the_keyring() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = config::Config::default();
+        cfg.upsert(config::Login {
+            url: "https://acme.testrail.io".into(),
+            email: "me@x.com".into(),
+        });
+        config::save(dir.path(), &cfg).unwrap();
+
+        let read = |service: &str, account: &str| {
+            assert_eq!(service, "testrail-arriba:acme.testrail.io");
+            assert_eq!(account, "me@x.com");
+            Ok(Some(b"base64:a2V5".to_vec()))
+        };
+        let creds = stored_in(dir.path(), None, &read).unwrap();
+        assert_eq!(creds.key, "key");
+        assert_eq!(creds.url, "https://acme.testrail.io");
+        assert_eq!(creds.source, Source::Stored);
+        assert_eq!(creds.source.to_string(), "stored login (keyring)");
+
+        let missing = |_: &str, _: &str| Ok(None);
+        let err = stored_in(dir.path(), None, &missing)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("missing from the keyring"), "{err}");
+        let err = stored_in(dir.path(), Some("other.testrail.io"), &read).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("No login for other.testrail.io"),
+            "{err}"
+        );
     }
 
     #[test]
