@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::api::Client;
-use crate::api::statuses::{self, Statuses};
+use crate::api::statuses::{Resolver, Statuses};
 use crate::attachment;
 use crate::case;
 use crate::cli::ResultAddArgs;
@@ -117,29 +117,19 @@ pub fn run(ctx: &Ctx, args: &ResultAddArgs) -> Result<()> {
 /// steps file, against its folder.
 fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared> {
     let target = target(client, args)?;
-    let mut statuses = StatusCache::new(client);
-    let status_id = statuses::resolve(client, &args.status)?;
+    let mut statuses = Resolver::new(client);
     let mut images = Images {
         client,
         run: target.run,
+        raw: args.raw,
         dry_run: args.dry_run,
         uploaded: HashMap::new(),
         log: Vec::new(),
     };
 
     let mut payload = Map::new();
-    payload.insert("status_id".into(), json!(status_id));
-
-    let comment = match (&args.comment, &args.comment_file) {
-        (Some(c), _) => Some((c.clone(), cwd.to_path_buf())),
-        (None, Some(f)) => {
-            let path = cwd.join(f);
-            Some((prompt::read_file(&path)?, folder(&path, cwd)))
-        }
-        (None, None) => None,
-    };
-    if let Some((comment, base)) = comment {
-        let html = convert(&comment, args.raw, &mut |src| images.src(&base, src))?;
+    payload.insert("status_id".into(), json!(statuses.id(&args.status)?));
+    if let Some(html) = comment(args, cwd, &mut images)? {
         payload.insert("comment".into(), json!(html));
     }
     if let Some(elapsed) = &args.elapsed {
@@ -155,48 +145,25 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
     if let Some(path) = &args.steps {
         let (inputs, base) = load_steps(path, cwd)?;
         let extra = step_images(&args.step_images, inputs.len(), cwd)?;
-        let case_steps = if inputs
-            .iter()
-            .any(|s| s.content.is_none() || s.expected.is_none())
-        {
-            let source = match &target.test_value {
-                Some(t) => t.clone(),
-                None => client.get(&format!("get_case/{}", target.case))?,
-            };
-            separated_steps(&source)
-        } else {
-            Vec::new()
-        };
-        if inputs.len() < case_steps.len() {
-            eprintln!(
-                "Note: the steps file covers {} of C{}'s {} steps.",
-                inputs.len(),
-                target.case,
-                case_steps.len()
-            );
-        }
+        let case_steps = case_steps(client, &target, &inputs)?;
         let mut steps = Vec::new();
+        let mut keep = |src: &str| Ok(src.to_string());
         for (i, input) in inputs.into_iter().enumerate() {
             let from_case = case_steps.get(i);
-            let mut keep = |src: &str| Ok(src.to_string());
-            let content = match &input.content {
-                Some(t) => convert(t, args.raw, &mut |src| images.src(&base, src))?,
-                None => match from_case {
-                    Some((c, _)) => convert(c, args.raw, &mut keep)?,
-                    None => bail!(
-                        "Step {} has no content, and C{} has {}. Give each step's content in the steps file.",
-                        i + 1,
-                        target.case,
-                        plural(case_steps.len(), "separated step")
-                    ),
-                },
+            let content = match (&input.content, from_case) {
+                (Some(t), _) => images.html(t, &base)?,
+                (None, Some((c, _))) => convert(c, args.raw, &mut keep)?,
+                (None, None) => bail!(
+                    "Step {} has no content, and C{} has {}. Give each step's content in the steps file.",
+                    i + 1,
+                    target.case,
+                    plural(case_steps.len(), "separated step")
+                ),
             };
-            let expected = match &input.expected {
-                Some(t) => convert(t, args.raw, &mut |src| images.src(&base, src))?,
-                None => match from_case {
-                    Some((_, e)) => convert(e, args.raw, &mut keep)?,
-                    None => String::new(),
-                },
+            let expected = match (&input.expected, from_case) {
+                (Some(t), _) => images.html(t, &base)?,
+                (None, Some((_, e))) => convert(e, args.raw, &mut keep)?,
+                (None, None) => String::new(),
             };
             let expected = if args.raw {
                 expected
@@ -204,7 +171,7 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
                 markup::quote(&expected)
             };
             let mut actual = match &input.actual {
-                Some(t) => convert(t, args.raw, &mut |src| images.src(&base, src))?,
+                Some(t) => images.html(t, &base)?,
                 None => String::new(),
             };
             for file in extra.get(&(i + 1)).into_iter().flatten() {
@@ -212,7 +179,7 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
                 actual.push_str(&format!("<img src=\"{src}\" />"));
             }
             let mut step = json!({"content": content, "expected": expected, "actual": actual});
-            if let Some(id) = statuses.step(&input, i + 1)? {
+            if let Some(id) = step_status(&input, i + 1, &mut statuses)? {
                 step["status_id"] = json!(id);
             }
             steps.push(step);
@@ -239,6 +206,19 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
         test: target.test,
         images: images.log,
     })
+}
+
+/// The comment as HTML, from the flag or a file whose images resolve against its folder.
+fn comment(args: &ResultAddArgs, cwd: &Path, images: &mut Images) -> Result<Option<String>> {
+    let (text, base) = match (&args.comment, &args.comment_file) {
+        (Some(c), _) => (c.clone(), cwd.to_path_buf()),
+        (None, Some(f)) => {
+            let path = cwd.join(f);
+            (prompt::read_file(&path)?, folder(&path, cwd))
+        }
+        (None, None) => return Ok(None),
+    };
+    images.html(&text, &base).map(Some)
 }
 
 fn target(client: &Client, args: &ResultAddArgs) -> Result<Target> {
@@ -319,13 +299,36 @@ fn step_images(
     Ok(out)
 }
 
-/// A case's separated steps. Text-template cases have none to fill from.
-fn separated_steps(source: &Value) -> Vec<(String, String)> {
-    if source["custom_steps_separated"].is_array() {
-        case::steps(source)
-    } else {
-        Vec::new()
+/// The case's separated steps, fetched only when `inputs` leave content or expected results out.
+/// Text-template cases have none to fill from.
+fn case_steps(
+    client: &Client,
+    target: &Target,
+    inputs: &[StepInput],
+) -> Result<Vec<(String, String)>> {
+    if inputs
+        .iter()
+        .all(|s| s.content.is_some() && s.expected.is_some())
+    {
+        return Ok(Vec::new());
     }
+    let source = match &target.test_value {
+        Some(t) => t.clone(),
+        None => client.get(&format!("get_case/{}", target.case))?,
+    };
+    if !source["custom_steps_separated"].is_array() {
+        return Ok(Vec::new());
+    }
+    let steps = case::steps(&source);
+    if inputs.len() < steps.len() {
+        eprintln!(
+            "Note: the steps file covers {} of C{}'s {} steps.",
+            inputs.len(),
+            target.case,
+            steps.len()
+        );
+    }
+    Ok(steps)
 }
 
 /// Text as TestRail's HTML, or as given with `raw`.
@@ -341,12 +344,18 @@ fn convert(text: &str, raw: bool, image: &mut dyn FnMut(&str) -> Result<String>)
 struct Images<'a> {
     client: &'a Client,
     run: u64,
+    raw: bool,
     dry_run: bool,
     uploaded: HashMap<PathBuf, String>,
     log: Vec<Value>,
 }
 
 impl Images<'_> {
+    /// Text as TestRail's HTML, with its local images, which resolve against `base`, uploaded.
+    fn html(&mut self, text: &str, base: &Path) -> Result<String> {
+        convert(text, self.raw, &mut |src| self.src(base, src))
+    }
+
     fn src(&mut self, base: &Path, src: &str) -> Result<String> {
         let path = base.join(src);
         if let Some(done) = self.uploaded.get(&path) {
@@ -373,44 +382,20 @@ impl Images<'_> {
     }
 }
 
-/// Step statuses, looking up the instance's only for names that are not system ones.
-struct StatusCache<'a> {
-    client: &'a Client,
-    fetched: Option<Statuses>,
-}
-
-impl<'a> StatusCache<'a> {
-    fn new(client: &'a Client) -> Self {
-        Self {
-            client,
-            fetched: None,
-        }
-    }
-
-    fn step(&mut self, input: &StepInput, n: usize) -> Result<Option<i64>> {
-        match (&input.status, input.status_id) {
-            (Some(_), Some(_)) => bail!("Step {n} has both status and status_id"),
-            (None, Some(id)) => Ok(Some(id)),
-            (None, None) => Ok(None),
-            (Some(Value::Number(id)), None) => id
-                .as_i64()
-                .map(Some)
-                .with_context(|| format!("Step {n} has status {id}, which is not an ID")),
-            (Some(Value::String(name)), None) => {
-                if let Ok(id) = Statuses::builtin().id(name) {
-                    return Ok(Some(id));
-                }
-                if self.fetched.is_none() {
-                    self.fetched = Some(Statuses::fetch(self.client)?);
-                }
-                let statuses = self.fetched.as_ref().expect("fetched above");
-                statuses
-                    .id(name)
-                    .map(Some)
-                    .with_context(|| format!("Step {n}"))
-            }
-            (Some(other), None) => bail!("Step {n} has status {other}, which is not a name or ID"),
-        }
+/// A step's status ID, from its status by name or ID, or its status_id.
+fn step_status(input: &StepInput, n: usize, statuses: &mut Resolver) -> Result<Option<i64>> {
+    match (&input.status, input.status_id) {
+        (Some(_), Some(_)) => bail!("Step {n} has both status and status_id"),
+        (None, id) => Ok(id),
+        (Some(Value::Number(id)), None) => id
+            .as_i64()
+            .map(Some)
+            .with_context(|| format!("Step {n} has status {id}, which is not an ID")),
+        (Some(Value::String(name)), None) => statuses
+            .id(name)
+            .map(Some)
+            .with_context(|| format!("Step {n}")),
+        (Some(other), None) => bail!("Step {n} has status {other}, which is not a name or ID"),
     }
 }
 
@@ -782,18 +767,25 @@ mod tests {
     fn step_statuses_must_be_names_or_whole_ids() {
         let server = Server::new();
         let client = Client::for_tests(&server.url());
-        let mut cache = StatusCache::new(&client);
+        let mut statuses = Resolver::new(&client);
         let step = |status: Value| StepInput {
             status: Some(status),
             ..Default::default()
         };
-        assert_eq!(cache.step(&step(json!(5)), 1).unwrap(), Some(5));
-        let err = cache.step(&step(json!(1.5)), 2).unwrap_err().to_string();
+        assert_eq!(
+            step_status(&step(json!(5)), 1, &mut statuses).unwrap(),
+            Some(5)
+        );
+        let err = step_status(&step(json!(1.5)), 2, &mut statuses)
+            .unwrap_err()
+            .to_string();
         assert_eq!(err, "Step 2 has status 1.5, which is not an ID");
-        let err = cache.step(&step(json!(true)), 3).unwrap_err().to_string();
+        let err = step_status(&step(json!(true)), 3, &mut statuses)
+            .unwrap_err()
+            .to_string();
         assert_eq!(err, "Step 3 has status true, which is not a name or ID");
         let none = StepInput::default();
-        assert_eq!(cache.step(&none, 4).unwrap(), None);
+        assert_eq!(step_status(&none, 4, &mut statuses).unwrap(), None);
     }
 
     #[test]

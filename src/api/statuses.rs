@@ -115,12 +115,29 @@ impl Statuses {
     }
 }
 
-/// The ID for a status, asking the instance only when the name is not a system one.
-pub fn resolve(client: &Client, text: &str) -> Result<i64> {
-    let builtin = Statuses::builtin();
-    match builtin.id(text) {
-        Ok(id) => Ok(id),
-        Err(_) => Statuses::fetch(client)?.id(text),
+/// Status IDs from names, asking the instance once and only for names that are not system ones.
+pub struct Resolver<'a> {
+    client: &'a Client,
+    fetched: Option<Statuses>,
+}
+
+impl<'a> Resolver<'a> {
+    pub fn new(client: &'a Client) -> Self {
+        Self {
+            client,
+            fetched: None,
+        }
+    }
+
+    /// The ID for a status given by ID, name, or label.
+    pub fn id(&mut self, text: &str) -> Result<i64> {
+        if let Ok(id) = Statuses::builtin().id(text) {
+            return Ok(id);
+        }
+        if let Some(fetched) = &self.fetched {
+            return fetched.id(text);
+        }
+        self.fetched.insert(Statuses::fetch(self.client)?).id(text)
     }
 }
 
@@ -157,8 +174,9 @@ mod tests {
             )
             .create();
         let client = Client::for_tests(&server.url());
-        assert_eq!(resolve(&client, "failed").unwrap(), 5);
-        assert_eq!(resolve(&client, "in progress").unwrap(), 6);
+        let mut statuses = Resolver::new(&client);
+        assert_eq!(statuses.id("failed").unwrap(), 5);
+        assert_eq!(statuses.id("in progress").unwrap(), 6);
         mock.assert();
     }
 
