@@ -40,6 +40,7 @@ impl Kind {
             Kind::Milestone => Some('M'),
             Kind::Run => Some('R'),
             Kind::Test => Some('T'),
+            Kind::Result => Some('#'),
             _ => None,
         }
     }
@@ -159,7 +160,7 @@ mod tests {
             (Kind::Plan, "plan ID, such as 123 or its URL"),
             (Kind::Run, "run ID, such as R123 or its URL"),
             (Kind::Test, "test ID, such as T123 or its URL"),
-            (Kind::Result, "result ID, such as 123,"),
+            (Kind::Result, "result ID, such as #123,"),
         ];
         for (kind, want) in cases {
             let err = parse("x", kind).unwrap_err().to_string();
@@ -184,5 +185,6 @@ mod tests {
         );
         assert_eq!(parse("M9", Kind::Milestone).unwrap(), 9);
         assert_eq!(parse("S6", Kind::Suite).unwrap(), 6);
+        assert_eq!(parse("#2064", Kind::Result).unwrap(), 2064);
     }
 }
