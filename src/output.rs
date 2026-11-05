@@ -130,6 +130,21 @@ pub fn text(v: &Value) -> String {
     }
 }
 
+/// Text with `first` before its first line and `rest` before the others.
+pub fn indent(text: &str, first: &str, rest: &str) -> String {
+    text.lines()
+        .enumerate()
+        .map(|(i, line)| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{}{line}", if i == 0 { first } else { rest })
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// `1 case` or `3 cases`.
 pub fn plural(n: usize, word: &str) -> String {
     if n == 1 {
@@ -192,5 +207,10 @@ mod tests {
         assert_eq!(plural(2, "case"), "2 cases");
         assert_eq!(first_line("\n  hello there\nmore", 5), "hell…");
         assert_eq!(first_line("hi", 5), "hi");
+    }
+
+    #[test]
+    fn indent_marks_the_first_line() {
+        assert_eq!(indent("a\n\nb", "  1. ", "     "), "  1. a\n\n     b");
     }
 }

@@ -8,7 +8,7 @@ use crate::cli::{TestCommand, TestListArgs, TestViewArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
 use crate::markup;
-use crate::output::{date, first_line, note_more, print_json, print_table, table, text};
+use crate::output::{date, first_line, indent, note_more, print_json, print_table, table, text};
 use crate::plan;
 
 pub fn run(ctx: &Ctx, cmd: TestCommand) -> Result<()> {
@@ -144,10 +144,7 @@ fn view(ctx: &Ctx, args: &TestViewArgs) -> Result<()> {
             out.push_str(&result_text(r, &statuses));
         }
     }
-    print!("{out}");
-    if markup::has_attachment_image(&out) {
-        println!("\n{}", case::IMAGE_HINT);
-    }
+    case::print_body(&out);
     Ok(())
 }
 
@@ -158,21 +155,17 @@ fn result_text(r: &Value, statuses: &Statuses) -> String {
         statuses.label(&r["status_id"]),
         date(&r["created_on"]),
     ];
-    for (label, key) in [
-        ("version", "version"),
-        ("elapsed", "elapsed"),
-        ("defects", "defects"),
-    ] {
+    for key in ["version", "elapsed", "defects"] {
         let value = text(&r[key]);
         if !value.is_empty() {
-            head.push(format!("{label} {value}"));
+            head.push(format!("{key} {value}"));
         }
     }
     head.retain(|h| !h.is_empty());
     let mut out = format!("  {}\n", head.join("  "));
     let comment = markup::to_text(&text(&r["comment"]));
     if !comment.is_empty() {
-        out.push_str(&case::indent(&comment, "    ", "    "));
+        out.push_str(&indent(&comment, "    ", "    "));
         out.push('\n');
     }
     for (i, step) in r["custom_step_results"]
@@ -190,7 +183,7 @@ fn result_text(r: &Value, statuses: &Statuses) -> String {
         ));
         let actual = markup::to_text(&text(&step["actual"]));
         if !actual.is_empty() {
-            out.push_str(&case::indent(&format!("Actual: {actual}"), &rest, &rest));
+            out.push_str(&indent(&format!("Actual: {actual}"), &rest, &rest));
             out.push('\n');
         }
     }

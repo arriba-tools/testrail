@@ -8,7 +8,7 @@ use crate::cli::{CaseCommand, CaseListArgs};
 use crate::context::Ctx;
 use crate::ids::{self, Kind};
 use crate::markup;
-use crate::output::{date, note_more, print_json, print_table, table, text};
+use crate::output::{date, indent, note_more, print_json, print_table, table, text};
 use crate::project;
 
 pub fn run(ctx: &Ctx, cmd: CaseCommand) -> Result<()> {
@@ -77,11 +77,7 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
     }
     rows.push(vec!["Updated".to_string(), date(&c["updated_on"])]);
     println!("{}", table(&rows, "  "));
-    let body = body(&c);
-    print!("{body}");
-    if markup::has_attachment_image(&body) {
-        println!("\n{IMAGE_HINT}");
-    }
+    print_body(&body(&c));
     Ok(())
 }
 
@@ -114,7 +110,15 @@ fn starts_a_word(haystack: &str, needle: &str) -> bool {
 }
 
 /// Printed after text that names attachment images, so the reader knows how to see them.
-pub const IMAGE_HINT: &str = "Download an image with `testrail-arriba attachment download <ID>`.";
+const IMAGE_HINT: &str = "Download an image with `testrail-arriba attachment download <ID>`.";
+
+/// Print a case's or test's text, then how to see the attachment images it names.
+pub fn print_body(text: &str) {
+    print!("{text}");
+    if markup::has_attachment_image(text) {
+        println!("\n{IMAGE_HINT}");
+    }
+}
 
 /// Fields shown as the steps, or not shown at all.
 const STEP_FIELDS: [&str; 5] = [
@@ -221,21 +225,6 @@ fn starts_with_list(text: &str) -> bool {
     LIST_START.is_match(text)
 }
 
-/// Text with `first` before its first line and `rest` before the others.
-pub fn indent(text: &str, first: &str, rest: &str) -> String {
-    text.lines()
-        .enumerate()
-        .map(|(i, line)| {
-            if line.is_empty() {
-                String::new()
-            } else {
-                format!("{}{line}", if i == 0 { first } else { rest })
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,11 +316,6 @@ mod tests {
             body(&case),
             "\nSteps\n  1.\n     1. Try empty\n     2. Try wrong\n     Expected:\n       - Errors show\n"
         );
-    }
-
-    #[test]
-    fn indent_marks_the_first_line() {
-        assert_eq!(indent("a\n\nb", "  1. ", "     "), "  1. a\n\n     b");
     }
 
     #[test]
