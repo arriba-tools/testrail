@@ -99,7 +99,7 @@ fn view(ctx: &Ctx, plan: &str) -> Result<()> {
         rows.push(vec!["Milestone".to_string(), text(&p["milestone_id"])]);
     }
     println!("{id}  {}", text(&p["name"]));
-    println!("{}", ctx.web_url(&format!("plans/view/{id}")));
+    println!("{}", ctx.page_url(Kind::Plan, id));
     println!("{}", table(&rows, "  "));
     print_rich(&p["description"]);
     let runs = runs(&p);

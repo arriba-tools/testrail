@@ -45,7 +45,7 @@ impl Kind {
     }
 
     /// The page path a link to one carries, as in `cases/view/39`.
-    fn page(self) -> Option<&'static str> {
+    pub fn page(self) -> Option<&'static str> {
         match self {
             Kind::Project => Some("projects/overview"),
             Kind::Suite => Some("suites/view"),

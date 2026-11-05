@@ -68,7 +68,7 @@ fn view(ctx: &Ctx, milestone: &str) -> Result<()> {
         rows.push(vec!["Refs".to_string(), refs]);
     }
     println!("{id}  {}", text(&m["name"]));
-    println!("{}", ctx.web_url(&format!("milestones/view/{id}")));
+    println!("{}", ctx.page_url(Kind::Milestone, id));
     println!("{}", table(&rows, "  "));
     print_rich(&m["description"]);
     Ok(())

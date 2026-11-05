@@ -86,7 +86,7 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
         }
     }
     println!("R{id}  {}", plan::run_name(&r));
-    println!("{}", ctx.web_url(&format!("runs/view/{id}")));
+    println!("{}", ctx.page_url(Kind::Run, id));
     println!("{}", table(&rows, "  "));
     print_rich(&r["description"]);
     Ok(())

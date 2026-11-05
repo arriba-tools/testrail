@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::api::Client;
 use crate::credentials::{self, Credentials};
+use crate::ids::Kind;
 
 /// State shared by every command: the API client, the login it uses, and the global flags.
 pub struct Ctx {
@@ -39,8 +40,9 @@ impl Ctx {
         }
     }
 
-    /// Web link to a page such as `cases/view/39`.
-    pub fn web_url(&self, page: &str) -> String {
-        self.creds.web_url(page)
+    /// Web link to the page of a case, run, or other kind that has one.
+    pub fn page_url(&self, kind: Kind, id: u64) -> String {
+        let page = kind.page().expect("only kinds with a page are linked");
+        self.creds.web_url(&format!("{page}/{id}"))
     }
 }

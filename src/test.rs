@@ -127,7 +127,7 @@ fn view(ctx: &Ctx, args: &TestViewArgs) -> Result<()> {
     }
     let statuses = Statuses::fetch(&ctx.client)?;
     println!("T{id}  {}", text(&t["title"]));
-    println!("{}", ctx.web_url(&format!("tests/view/{id}")));
+    println!("{}", ctx.page_url(Kind::Test, id));
     let rows = vec![
         vec!["Status".to_string(), statuses.label(&t["status_id"])],
         vec![

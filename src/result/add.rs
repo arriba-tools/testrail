@@ -83,15 +83,12 @@ pub fn run(ctx: &Ctx, args: &ResultAddArgs) -> Result<()> {
             "attachments": attached,
         }));
     }
-    let test = result["test_id"]
-        .as_u64()
-        .or(prepared.test)
-        .map(|t| t.to_string());
+    let test = result["test_id"].as_u64().or(prepared.test);
     let status = Statuses::builtin().label(&result["status_id"]);
-    match &test {
+    match test {
         Some(t) => {
             println!("✓ Added result {result_id} ({status}) to T{t}");
-            println!("  {}", ctx.web_url(&format!("tests/view/{t}")));
+            println!("  {}", ctx.page_url(Kind::Test, t));
         }
         None => println!("✓ Added result {result_id} ({status})"),
     }

@@ -67,7 +67,7 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
         return print_json(&c);
     }
     println!("C{id}  {}", text(&c["title"]));
-    println!("{}", ctx.web_url(&format!("cases/view/{id}")));
+    println!("{}", ctx.page_url(Kind::Case, id));
     let mut rows = vec![vec!["Section".to_string(), text(&c["section_id"])]];
     for (label, key) in [("Refs", "refs"), ("Estimate", "estimate")] {
         let value = text(&c[key]);

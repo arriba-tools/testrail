@@ -65,7 +65,7 @@ fn view(ctx: &Ctx, project: &str) -> Result<()> {
         state_row(&p),
     ];
     println!("{id}  {}", text(&p["name"]));
-    println!("{}", ctx.web_url(&format!("projects/overview/{id}")));
+    println!("{}", ctx.page_url(Kind::Project, id));
     println!("{}", table(&rows, "  "));
     print_rich(&p["announcement"]);
     Ok(())
