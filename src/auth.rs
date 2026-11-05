@@ -35,6 +35,14 @@ fn status(site: Option<&str>, json: bool) -> Result<()> {
             );
         }
     };
+    print_login(&creds, &me, json)
+}
+
+fn current_user(creds: &Credentials) -> Result<Value> {
+    Client::new(creds)?.get("get_current_user")
+}
+
+fn print_login(creds: &Credentials, me: &Value, json: bool) -> Result<()> {
     if json {
         return print_json(&json!({
             "logged_in": true,
@@ -45,15 +53,6 @@ fn status(site: Option<&str>, json: bool) -> Result<()> {
             "source": creds.source.to_string(),
         }));
     }
-    print_login(&creds, &me);
-    Ok(())
-}
-
-fn current_user(creds: &Credentials) -> Result<Value> {
-    Client::new(creds)?.get("get_current_user")
-}
-
-fn print_login(creds: &Credentials, me: &Value) {
     println!(
         "✓ Logged in to {} as {} ({})",
         creds.site(),
@@ -65,6 +64,7 @@ fn print_login(creds: &Credentials, me: &Value) {
         vec!["User".to_string(), text(&me["id"])],
     ];
     println!("{}", table(&rows, "  "));
+    Ok(())
 }
 
 fn not_logged_in(json: bool, reason: &str) -> Result<()> {
@@ -126,18 +126,7 @@ fn login(site: Option<&str>, json: bool, args: LoginArgs) -> Result<()> {
         email: creds.email.clone(),
     });
     config::save(&dir, &cfg)?;
-    if json {
-        return print_json(&json!({
-            "logged_in": true,
-            "url": creds.url,
-            "user_id": me["id"],
-            "name": me["name"],
-            "email": me["email"],
-            "source": creds.source.to_string(),
-        }));
-    }
-    print_login(&creds, &me);
-    Ok(())
+    print_login(&creds, &me, json)
 }
 
 /// Forget a stored login and its key.
