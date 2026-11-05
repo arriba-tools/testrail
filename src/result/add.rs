@@ -213,10 +213,7 @@ fn prepare(client: &Client, args: &ResultAddArgs, cwd: &Path) -> Result<Prepared
 fn comment(args: &ResultAddArgs, cwd: &Path, images: &mut Images) -> Result<Option<String>> {
     let (text, base) = match (&args.comment, &args.comment_file) {
         (Some(c), _) => (c.clone(), cwd.to_path_buf()),
-        (None, Some(f)) => {
-            let path = cwd.join(f);
-            (prompt::read_file(&path)?, folder(&path, cwd))
-        }
+        (None, Some(f)) => read_input(f, cwd)?,
         (None, None) => return Ok(None),
     };
     images.html(&text, &base).map(Some)
@@ -254,14 +251,18 @@ fn folder(path: &Path, cwd: &Path) -> PathBuf {
     }
 }
 
+/// A file's text, or stdin's for `-`, and the folder its image paths resolve against.
+fn read_input(path: &Path, cwd: &Path) -> Result<(String, PathBuf)> {
+    if path.as_os_str() == "-" {
+        return Ok((prompt::read_stdin()?, cwd.to_path_buf()));
+    }
+    let full = cwd.join(path);
+    Ok((prompt::read_file(&full)?, folder(&full, cwd)))
+}
+
 /// The steps file's entries, and the folder its image paths resolve against.
 fn load_steps(path: &Path, cwd: &Path) -> Result<(Vec<StepInput>, PathBuf)> {
-    let (text, base) = if path.as_os_str() == "-" {
-        (prompt::read_stdin()?, cwd.to_path_buf())
-    } else {
-        let full = cwd.join(path);
-        (prompt::read_file(&full)?, folder(&full, cwd))
-    };
+    let (text, base) = read_input(path, cwd)?;
     let steps: Vec<StepInput> = serde_json::from_str(&text).with_context(|| {
         format!(
             "{} is not a JSON array of steps with content, expected, actual, and status",
