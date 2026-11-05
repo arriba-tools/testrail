@@ -212,8 +212,7 @@ fn fetch(
         .and_then(|v| v.to_str().ok())
         .and_then(disposition_name);
     let name = name.map(str::to_string).or(served);
-    // Pasted screenshots are all named image.png, so the ID leads to tell them apart.
-    let mut file = format!("{id}-{}", safe_name(name.as_deref().unwrap_or(""), id));
+    let mut file = safe_name(name.as_deref().unwrap_or(""), id);
     if !taken.insert(file.clone()) {
         file = with_suffix(&file, id);
         taken.insert(file.clone());
@@ -264,7 +263,7 @@ fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A name that stays inside the download folder, or one made from the ID.
+/// A name led by the ID that stays inside the download folder, or one made from the ID alone.
 fn safe_name(name: &str, id: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or("");
     let clean: String = base
@@ -275,7 +274,8 @@ fn safe_name(name: &str, id: &str) -> String {
     if clean.is_empty() {
         format!("attachment-{id}")
     } else {
-        clean
+        // Pasted screenshots are all named image.png, so the ID leads to tell them apart.
+        format!("{id}-{clean}")
     }
 }
 
@@ -328,8 +328,8 @@ mod tests {
 
     #[test]
     fn names_stay_in_the_folder() {
-        assert_eq!(safe_name("../../etc/passwd", "5"), "passwd");
-        assert_eq!(safe_name("C:\\x\\a:b.png", "5"), "a_b.png");
+        assert_eq!(safe_name("../../etc/passwd", "5"), "5-passwd");
+        assert_eq!(safe_name("C:\\x\\a:b.png", "5"), "5-a_b.png");
         assert_eq!(safe_name("", "5"), "attachment-5");
         assert_eq!(safe_name("..", "5"), "attachment-5");
         assert_eq!(with_suffix("shot.png", "55"), "shot-55.png");
