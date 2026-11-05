@@ -88,6 +88,10 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
     Ok(())
 }
 
+/// Shown in place of steps when a case has none.
+pub const NO_STEPS: &str =
+    "None. This case has no steps, so a result would have nothing to check against.";
+
 /// A case's title and text as one lowercase string, for searching.
 fn searchable(case: &Value) -> String {
     let mut parts = vec![
@@ -180,7 +184,11 @@ pub fn body(case: &Value) -> String {
         section("Preconditions", &preconds);
     }
     let steps = steps(case);
-    if !steps.is_empty() {
+    // A case with nothing to check is not one a result can pass, so it says so outright.
+    let scenario = text(&case["custom_testrail_bdd_scenario"]);
+    if steps.is_empty() && scenario.trim().is_empty() {
+        out.push_str(&format!("\nSteps\n  {NO_STEPS}\n"));
+    } else if !steps.is_empty() {
         out.push_str("\nSteps\n");
         for (i, (content, expected)) in steps.iter().enumerate() {
             let first = format!("  {}. ", i + 1);
@@ -275,6 +283,16 @@ mod tests {
         );
         assert!(markup::has_attachment_image(&body));
         assert_eq!(field_label("custom_x"), "X");
+    }
+
+    #[test]
+    fn cases_without_steps_say_so() {
+        assert_eq!(
+            body(&json!({"title": "x"})),
+            format!("\nSteps\n  {NO_STEPS}\n")
+        );
+        let bdd = json!({"custom_testrail_bdd_scenario": "Given a user"});
+        assert!(!body(&bdd).contains(NO_STEPS));
     }
 
     #[test]
