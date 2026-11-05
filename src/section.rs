@@ -61,4 +61,22 @@ mod tests {
         assert_eq!(rows(&sections, true)[1], vec!["2", "  Errors"]);
         assert_eq!(rows(&sections, false)[1], vec!["2", "Errors"]);
     }
+
+    #[test]
+    fn sections_list_flat_as_a_tree_and_as_json() {
+        use crate::testing::{cli, get, page};
+        let mut s = mockito::Server::new();
+        get(
+            &mut s,
+            "get_sections/2&suite_id=6&limit=250&offset=0",
+            page(
+                "sections",
+                json!([{"id": 30, "name": "Installer", "depth": 0},
+                       {"id": 56, "name": "Sign up", "depth": 1}]),
+            ),
+        );
+        cli(&s, &["section", "list", "-p", "2", "-s", "S6"]).unwrap();
+        cli(&s, &["section", "list", "-p", "2", "-s", "6", "--tree"]).unwrap();
+        cli(&s, &["--json", "section", "list", "-p", "2", "-s", "6"]).unwrap();
+    }
 }

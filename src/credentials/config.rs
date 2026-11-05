@@ -173,4 +173,10 @@ mod tests {
         assert_eq!(config.current.as_deref(), Some("b.testrail.io"));
         assert!(config.remove("a.testrail.io").is_none());
     }
+
+    #[test]
+    fn the_config_lives_in_a_testrail_arriba_folder() {
+        let dir = dir().unwrap();
+        assert_eq!(dir.file_name().unwrap(), "testrail-arriba");
+    }
 }

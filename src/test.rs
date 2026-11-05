@@ -281,4 +281,58 @@ mod tests {
             "  #2064  Failed  version 2.4.11  elapsed 2m\n    Fails at step 2\n    1. Passed  Log in\n    2. Failed  Save\n       Actual: Nothing saved\n"
         );
     }
+
+    #[test]
+    fn tests_list_and_view_through_the_cli() {
+        use crate::testing::{cli, get, page, statuses};
+        let mut s = Server::new();
+        statuses(&mut s);
+        get(
+            &mut s,
+            "get_tests/92&status_id=5,6&limit=50&offset=0",
+            page(
+                "tests",
+                json!([{"id": 1789, "status_id": 5, "case_id": 66, "title": "Sentry"}]),
+            ),
+        );
+        get(
+            &mut s,
+            "get_test/1782",
+            json!({"id": 1782, "run_id": 92, "case_id": 52, "status_id": 3, "title": "Login",
+                   "custom_steps_separated": [{"content": "<p>Open</p>",
+                       "expected": "<p><img src=\"index.php?/attachments/get/7\"></p>"}]}),
+        );
+        get(
+            &mut s,
+            "get_run/92",
+            json!({"id": 92, "name": "Win", "config": "Windows"}),
+        );
+        get(
+            &mut s,
+            "get_results/1782&limit=5&offset=0",
+            page(
+                "results",
+                json!([{"id": 2064, "status_id": 1, "created_on": 1762000000,
+                        "version": "2.4.11", "comment": "ok",
+                        "custom_step_results": [{"content": "<p>Open</p>", "status_id": "1"}]}]),
+            ),
+        );
+        cli(
+            &s,
+            &["test", "list", "R92", "--status", "failed,not_applicable"],
+        )
+        .unwrap();
+        cli(
+            &s,
+            &["--json", "test", "list", "R92", "-s", "failed", "-s", "6"],
+        )
+        .unwrap();
+        cli(&s, &["test", "view", "T1782"]).unwrap();
+        cli(&s, &["--json", "test", "view", "1782"]).unwrap();
+        let err = cli(&s, &["test", "list", "R92", "--status", "bogus"]).unwrap_err();
+        assert!(
+            err.to_string().starts_with("No status named \"bogus\""),
+            "{err}"
+        );
+    }
 }

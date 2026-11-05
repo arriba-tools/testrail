@@ -393,4 +393,30 @@ mod tests {
             "Log:\na  b\nc\nafter"
         );
     }
+
+    #[test]
+    fn entities_decode_by_name_and_number() {
+        assert_eq!(
+            to_text("&lt;a&gt; &quot;b&quot; &apos;c&#39; &hellip;&mdash;&ndash;&lsquo;&rsquo;"),
+            "<a> \"b\" 'c' …—–‘’"
+        );
+        assert_eq!(
+            to_text("&ldquo;x&rdquo; &larr;&rarr; 2&times;3 &#x41;&#X42;"),
+            "“x” ←→ 2×3 AB"
+        );
+        assert_eq!(to_text("&bogus; &#xZZ;"), "&bogus; &#xZZ;");
+    }
+
+    #[test]
+    fn odd_tags_and_spacing_read_sensibly() {
+        assert_eq!(
+            to_text("<p>a<!-- note -->b</p><img alt=\"x\">"),
+            "ab\n[image]"
+        );
+        assert_eq!(to_text("<p><b>bold</b>text</p>"), "boldtext");
+        assert_eq!(
+            to_text("<table><tr><td>a</td><td>b</td></tr></table><h2>Head</h2>"),
+            "a | b\nHead"
+        );
+    }
 }

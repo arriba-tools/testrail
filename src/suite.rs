@@ -38,3 +38,28 @@ pub fn run(ctx: &Ctx, cmd: SuiteCommand) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{cli, get, page};
+    use mockito::Server;
+    use serde_json::json;
+
+    #[test]
+    fn suites_list_with_their_flags() {
+        let mut s = Server::new();
+        get(
+            &mut s,
+            "get_suites/2&limit=250&offset=0",
+            page(
+                "suites",
+                json!([
+                    {"id": 6, "name": "Master", "is_baseline": false, "is_completed": false},
+                    {"id": 7, "name": "Base", "is_baseline": true, "is_completed": true}
+                ]),
+            ),
+        );
+        cli(&s, &["suite", "list", "-p", "2"]).unwrap();
+        cli(&s, &["--json", "suite", "list", "-p", "2"]).unwrap();
+    }
+}

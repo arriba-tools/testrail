@@ -415,4 +415,80 @@ mod tests {
         );
         assert!(upload(&client, "add_attachment_to_run/17", &file).is_err());
     }
+
+    #[test]
+    fn attachments_list_add_download_and_delete_through_the_cli() {
+        use crate::testing::{cli, get, page, post};
+        let mut s = Server::new();
+        get(
+            &mut s,
+            "get_attachments_for_case/52&limit=250&offset=0",
+            page(
+                "attachments",
+                json!([{"id": 451, "name": "image.png", "size": 225280, "created_on": 1762000000}]),
+            ),
+        );
+        get(
+            &mut s,
+            "get_attachments_for_test/1782&limit=250&offset=0",
+            page("attachments", json!([])),
+        );
+        // Older servers answer with a bare array and name the ID attachment_id.
+        get(
+            &mut s,
+            "get_attachments_for_plan/91&limit=250&offset=0",
+            json!([{"attachment_id": 5, "name": "a.log"}]),
+        );
+        for target in ["run/16", "result/9001", "case/52", "plan/91"] {
+            post(
+                &mut s,
+                &format!("add_attachment_to_{target}"),
+                json!({"attachment_id": 70}),
+            );
+        }
+        let delete = post(&mut s, "delete_attachment/451", json!(null));
+        s.mock("GET", "/index.php?/api/v2/get_attachment/9")
+            .with_body("log")
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("shot.png");
+        std::fs::write(&file, "png").unwrap();
+        let file = file.to_str().unwrap();
+        let out = dir.path().join("out");
+        let out = out.to_str().unwrap();
+
+        cli(&s, &["attachment", "list", "--case", "C52"]).unwrap();
+        cli(&s, &["attachment", "list", "--test", "T1782"]).unwrap();
+        cli(&s, &["--json", "attachment", "list", "--plan", "91"]).unwrap();
+        cli(&s, &["attachment", "add", file, "--run", "R16"]).unwrap();
+        cli(&s, &["attachment", "upload", file, "--result", "9001"]).unwrap();
+        cli(&s, &["--json", "attachment", "add", file, "--case", "C52"]).unwrap();
+        cli(&s, &["attachment", "add", file, "--plan", "91"]).unwrap();
+        cli(&s, &["attachment", "download", "9", "-o", out]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("out/attachment-9")).unwrap(),
+            "log"
+        );
+        cli(
+            &s,
+            &[
+                "--json",
+                "attachment",
+                "download",
+                "--test",
+                "T1782",
+                "-o",
+                out,
+            ],
+        )
+        .unwrap();
+        cli(&s, &["attachment", "download", "--test", "1782", "-o", out]).unwrap();
+        cli(&s, &["attachment", "delete", "451"]).unwrap();
+        delete.assert();
+
+        let err = cli(&s, &["attachment", "download", "9", "--run", "R16"]).unwrap_err();
+        assert!(err.to_string().ends_with("not both"), "{err}");
+        assert!(cli(&s, &["attachment", "download"]).is_err());
+    }
 }

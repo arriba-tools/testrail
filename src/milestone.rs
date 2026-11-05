@@ -83,3 +83,38 @@ fn view(ctx: &Ctx, milestone: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{cli, get, page};
+    use mockito::Server;
+    use serde_json::json;
+
+    #[test]
+    fn milestones_list_with_sub_milestones_and_view() {
+        let mut s = Server::new();
+        get(
+            &mut s,
+            "get_milestones/2&is_completed=1&limit=250&offset=0",
+            page(
+                "milestones",
+                json!([{"id": 9, "name": "2.0", "due_on": 1772000000, "is_completed": true,
+                        "milestones": [{"id": 10, "name": "2.0 beta", "is_completed": true}]}]),
+            ),
+        );
+        get(
+            &mut s,
+            "get_milestone/9",
+            json!({"id": 9, "name": "2.0", "is_completed": false, "start_on": 1771000000,
+                   "due_on": 1772000000, "refs": "PROJ-1", "description": "<p>Ship it</p>"}),
+        );
+        cli(&s, &["milestone", "list", "-p", "2", "--completed"]).unwrap();
+        cli(
+            &s,
+            &["--json", "milestone", "list", "-p", "2", "--completed"],
+        )
+        .unwrap();
+        cli(&s, &["milestone", "view", "M9"]).unwrap();
+        cli(&s, &["--json", "milestone", "view", "9"]).unwrap();
+    }
+}

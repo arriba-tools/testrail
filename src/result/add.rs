@@ -648,4 +648,158 @@ mod tests {
             "--step-image 2=x.png names step 2, but the steps file has 1 step"
         );
     }
+
+    #[test]
+    fn results_are_added_with_attachments_through_the_cli() {
+        use crate::testing::{cli, post};
+        let mut s = Server::new();
+        let add = post(
+            &mut s,
+            "add_result_for_case/16/78",
+            json!({"id": 9001, "test_id": 1782, "status_id": 1}),
+        );
+        let attach = post(
+            &mut s,
+            "add_attachment_to_result/9001",
+            json!({"attachment_id": 70}),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("console.log");
+        std::fs::write(&log, "log").unwrap();
+        let log = log.to_str().unwrap();
+        cli(
+            &s,
+            &[
+                "result", "add", "-r", "R16", "-c", "C78", "-s", "passed", "-a", log,
+            ],
+        )
+        .unwrap();
+        add.assert();
+        attach.assert();
+
+        let missing = dir.path().join("missing.log");
+        let args = [
+            "result", "add", "-r", "16", "-c", "78", "-s", "passed", "-a",
+        ];
+        let err = cli(&s, &[&args[..], &[missing.to_str().unwrap()]].concat()).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("Added result 9001, but attaching"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn results_with_images_report_their_uploads() {
+        use crate::testing::{cli, post};
+        let mut s = Server::new();
+        post(
+            &mut s,
+            "add_attachment_to_run/16",
+            json!({"attachment_id": 55}),
+        );
+        post(
+            &mut s,
+            "add_result_for_case/16/78",
+            json!({"id": 9002, "status_id": 5}),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let shot = dir.path().join("shot.png");
+        std::fs::write(&shot, "png").unwrap();
+        let steps = dir.path().join("steps.json");
+        let actual = format!("Broke.\n\n![](<{}>)", shot.display());
+        std::fs::write(
+            &steps,
+            json!([{"content": "Open", "expected": "Loads", "actual": actual, "status": "failed"}])
+                .to_string(),
+        )
+        .unwrap();
+        let steps = steps.to_str().unwrap();
+        let args = [
+            "result", "add", "-r", "16", "-c", "78", "-s", "failed", "--steps", steps,
+        ];
+        cli(&s, &args).unwrap();
+        cli(&s, &[&["--json"][..], &args].concat()).unwrap();
+        cli(&s, &[&args[..], &["--dry-run"]].concat()).unwrap();
+    }
+
+    #[test]
+    fn comment_files_partial_steps_and_custom_step_statuses() {
+        let mut server = Server::new();
+        server
+            .mock("GET", "/index.php?/api/v2/get_case/78")
+            .with_body(
+                json!({"custom_steps_separated": [
+                    {"content": "One", "expected": "First"},
+                    {"content": "Two", "expected": "Second"},
+                    {"content": "Three", "expected": "Third"}
+                ]})
+                .to_string(),
+            )
+            .create();
+        let statuses = server
+            .mock("GET", "/index.php?/api/v2/get_statuses")
+            .with_body(r#"[{"id": 6, "name": "not_applicable", "label": "Not Applicable"}]"#)
+            .expect(1)
+            .create();
+        server
+            .mock("POST", "/index.php?/api/v2/add_attachment_to_run/16")
+            .with_body(r#"{"attachment_id": 57}"#)
+            .create();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("notes")).unwrap();
+        std::fs::write(dir.path().join("notes/log.png"), "png").unwrap();
+        std::fs::write(dir.path().join("notes/comment.md"), "See ![](log.png)").unwrap();
+        std::fs::write(
+            dir.path().join("steps.json"),
+            json!([
+                {"status": "not applicable"},
+                {"status": "Not Applicable", "content": "Mine", "expected": null}
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        let client = Client::for_tests(&server.url());
+        let mut a = args();
+        a.comment_file = Some("notes/comment.md".into());
+        a.steps = Some("steps.json".into());
+        let p = prepare(&client, &a, dir.path()).unwrap();
+        statuses.assert();
+        assert_eq!(
+            p.payload["comment"],
+            "<p>See <img src=\"index.php?/attachments/get/57\" alt=\"\" /></p>"
+        );
+        let steps = &p.payload["custom_step_results"];
+        assert_eq!(steps[0]["status_id"], 6);
+        assert_eq!(steps[1]["content"], "<p>Mine</p>");
+        assert_eq!(
+            steps[1]["expected"],
+            "<blockquote><p>Second</p></blockquote>"
+        );
+    }
+
+    #[test]
+    fn step_statuses_must_be_names_or_whole_ids() {
+        let server = Server::new();
+        let client = Client::for_tests(&server.url());
+        let mut cache = StatusCache::new(&client);
+        let step = |status: Value| StepInput {
+            status: Some(status),
+            ..Default::default()
+        };
+        assert_eq!(cache.step(&step(json!(5)), 1).unwrap(), Some(5));
+        let err = cache.step(&step(json!(1.5)), 2).unwrap_err().to_string();
+        assert_eq!(err, "Step 2 has status 1.5, which is not an ID");
+        let err = cache.step(&step(json!(true)), 3).unwrap_err().to_string();
+        assert_eq!(err, "Step 3 has status true, which is not a name or ID");
+        let none = StepInput::default();
+        assert_eq!(cache.step(&none, 4).unwrap(), None);
+    }
+
+    #[test]
+    fn bare_file_names_resolve_against_the_working_folder() {
+        let cwd = Path::new("/work");
+        assert_eq!(folder(Path::new("steps.json"), cwd), PathBuf::from("/work"));
+        assert_eq!(folder(Path::new("/a/steps.json"), cwd), PathBuf::from("/a"));
+    }
 }

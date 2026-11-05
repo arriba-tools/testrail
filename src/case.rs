@@ -336,4 +336,58 @@ mod tests {
     fn indent_marks_the_first_line() {
         assert_eq!(indent("a\n\nb", "  1. ", "     "), "  1. a\n\n     b");
     }
+
+    #[test]
+    fn cases_list_with_every_filter_and_view_through_the_cli() {
+        use crate::testing::{cli, get, page};
+        let mut s = mockito::Server::new();
+        let cases = json!([
+            {"id": 65, "title": "Login via SSO"},
+            {"id": 259, "title": "DMG", "custom_preconds": "Check the processor"},
+            {"id": 52, "title": "Login", "custom_steps_separated": [{"content": "Use SSO"}]}
+        ]);
+        get(
+            &mut s,
+            "get_cases/2&suite_id=6&section_id=31&filter=Login&refs=D4T-1&limit=50&offset=0",
+            page("cases", cases.clone()),
+        );
+        get(
+            &mut s,
+            "get_cases/2&limit=250&offset=0",
+            page("cases", cases),
+        );
+        get(
+            &mut s,
+            "get_cases/3&limit=50&offset=0",
+            page("cases", json!([])),
+        );
+        get(
+            &mut s,
+            "get_case/52",
+            json!({"id": 52, "title": "Login", "section_id": 31, "refs": "D4T-1",
+                   "estimate": "8min", "updated_on": 1762000000,
+                   "custom_steps_separated": [{"content": "<p>Open</p>",
+                       "expected": "<p><img src=\"index.php?/attachments/get/7\"></p>"}]}),
+        );
+        let filtered = [
+            "-s",
+            "6",
+            "--section",
+            "31",
+            "-f",
+            "Login",
+            "--ref",
+            "D4T-1",
+        ];
+        cli(&s, &[&["case", "list", "-p", "2"][..], &filtered].concat()).unwrap();
+        cli(
+            &s,
+            &["case", "list", "-p", "2", "--grep", "sso", "--limit", "1"],
+        )
+        .unwrap();
+        cli(&s, &["--json", "case", "list", "-p", "2", "--grep", "sso"]).unwrap();
+        cli(&s, &["case", "list", "-p", "3"]).unwrap();
+        cli(&s, &["case", "view", "C52"]).unwrap();
+        cli(&s, &["--json", "case", "view", "52"]).unwrap();
+    }
 }

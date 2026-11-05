@@ -168,4 +168,41 @@ mod tests {
             vec![("is_completed", "0".to_string())]
         );
     }
+
+    #[test]
+    fn projects_list_and_view_through_the_cli() {
+        use crate::testing::{cli, get, page};
+        let mut s = Server::new();
+        get(
+            &mut s,
+            "get_projects&is_completed=0&limit=250&offset=0",
+            page(
+                "projects",
+                json!([
+                    {"id": 2, "name": "Acme", "suite_mode": 1, "is_completed": false},
+                    {"id": 3, "name": "Old", "suite_mode": 3, "is_completed": true}
+                ]),
+            ),
+        );
+        get(
+            &mut s,
+            "get_projects&limit=250&offset=0",
+            page("projects", json!([])),
+        );
+        get(
+            &mut s,
+            "get_project/2",
+            json!({"id": 2, "name": "Acme", "suite_mode": 2, "is_completed": true,
+                   "announcement": "<p>Read me</p>"}),
+        );
+        cli(&s, &["project", "list", "--active"]).unwrap();
+        cli(&s, &["project", "list"]).unwrap();
+        cli(&s, &["--json", "project", "list"]).unwrap();
+        cli(&s, &["project", "view", "2"]).unwrap();
+        cli(&s, &["--json", "project", "view", "2"]).unwrap();
+        let err = cli(&s, &["project", "view", "Nope"])
+            .unwrap_err()
+            .to_string();
+        assert!(err.starts_with("No project is named \"Nope\""), "{err}");
+    }
 }

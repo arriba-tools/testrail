@@ -154,6 +154,7 @@ mod tests {
     fn text_helpers() {
         assert_eq!(text(&json!("a")), "a");
         assert_eq!(text(&json!(3)), "3");
+        assert_eq!(text(&json!(true)), "true");
         assert_eq!(text(&json!(null)), "");
         assert_eq!(plural(1, "case"), "1 case");
         assert_eq!(plural(2, "case"), "2 cases");

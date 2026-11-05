@@ -152,4 +152,53 @@ mod tests {
         assert_eq!(run_name(&runs[1]), "Signup");
         assert!(super::runs(&json!({})).is_empty());
     }
+
+    #[test]
+    fn plans_list_by_name_and_view_their_runs() {
+        use crate::testing::{cli, get, page, statuses};
+        let mut s = mockito::Server::new();
+        statuses(&mut s);
+        let plans = json!([
+            {"id": 91, "name": "2.4 Regression", "created_on": 1762000000,
+             "passed_count": 11, "custom_status1_count": 4},
+            {"id": 85, "name": "CLI 8.0", "created_on": 1760000000, "is_completed": true,
+             "failed_count": 2}
+        ]);
+        get(
+            &mut s,
+            "get_plans/2&is_completed=0&milestone_id=15&limit=50&offset=0",
+            page("plans", plans.clone()),
+        );
+        get(
+            &mut s,
+            "get_plans/2&limit=250&offset=0",
+            page("plans", plans),
+        );
+        get(
+            &mut s,
+            "get_plan/91",
+            json!({"id": 91, "name": "2.4 Regression", "is_completed": false,
+                   "milestone_id": 15, "description": "<p>Notes</p>", "passed_count": 1,
+                   "entries": [{"id": "e1", "runs": [
+                       {"id": 92, "name": "Win", "config": "Windows", "untested_count": 3}]}]}),
+        );
+        cli(&s, &["plan", "list", "-p", "2", "--active", "-m", "15"]).unwrap();
+        cli(
+            &s,
+            &[
+                "plan",
+                "list",
+                "-p",
+                "2",
+                "--name",
+                "regression",
+                "--limit",
+                "1",
+            ],
+        )
+        .unwrap();
+        cli(&s, &["--json", "plan", "list", "-p", "2", "--name", "cli"]).unwrap();
+        cli(&s, &["plan", "view", "91"]).unwrap();
+        cli(&s, &["--json", "plan", "view", "91"]).unwrap();
+    }
 }

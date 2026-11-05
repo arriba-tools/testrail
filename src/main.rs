@@ -19,6 +19,8 @@ mod section;
 mod status;
 mod suite;
 mod test;
+#[cfg(test)]
+mod testing;
 
 use anyhow::Result;
 use clap::Parser;
@@ -36,22 +38,28 @@ fn main() -> Result<()> {
     api::init_tls();
     let cli = Cli::parse();
 
-    // Built on first use, so commands that never reach TestRail need no login.
-    let ctx = || Ctx::new(cli.site.as_deref(), cli.json, cli.yes);
-
     match cli.command {
+        // Auth reads and stores logins itself, so it runs without one.
         Command::Auth(cmd) => auth::run(cli.site.as_deref(), cli.json, cli.yes, cmd),
-        Command::Project(cmd) => project::run(&ctx()?, cmd),
-        Command::Suite(cmd) => suite::run(&ctx()?, cmd),
-        Command::Section(cmd) => section::run(&ctx()?, cmd),
-        Command::Case(cmd) => case::run(&ctx()?, cmd),
-        Command::Milestone(cmd) => milestone::run(&ctx()?, cmd),
-        Command::Plan(cmd) => plan::run(&ctx()?, cmd),
-        Command::Run(cmd) => run::run(&ctx()?, cmd),
-        Command::Test(cmd) => test::run(&ctx()?, cmd),
-        Command::Result(cmd) => result::run(&ctx()?, cmd),
-        Command::Attachment(cmd) => attachment::run(&ctx()?, cmd),
-        Command::Status(cmd) => status::run(&ctx()?, cmd),
-        Command::Api(args) => raw::run(&ctx()?, args),
+        command => dispatch(&Ctx::new(cli.site.as_deref(), cli.json, cli.yes)?, command),
+    }
+}
+
+/// Run a command that reaches TestRail with the login in `ctx`.
+fn dispatch(ctx: &Ctx, command: Command) -> Result<()> {
+    match command {
+        Command::Auth(_) => unreachable!("auth runs before a login is read"),
+        Command::Project(cmd) => project::run(ctx, cmd),
+        Command::Suite(cmd) => suite::run(ctx, cmd),
+        Command::Section(cmd) => section::run(ctx, cmd),
+        Command::Case(cmd) => case::run(ctx, cmd),
+        Command::Milestone(cmd) => milestone::run(ctx, cmd),
+        Command::Plan(cmd) => plan::run(ctx, cmd),
+        Command::Run(cmd) => run::run(ctx, cmd),
+        Command::Test(cmd) => test::run(ctx, cmd),
+        Command::Result(cmd) => result::run(ctx, cmd),
+        Command::Attachment(cmd) => attachment::run(ctx, cmd),
+        Command::Status(cmd) => status::run(ctx, cmd),
+        Command::Api(args) => raw::run(ctx, args),
     }
 }

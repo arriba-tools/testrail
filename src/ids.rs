@@ -149,4 +149,40 @@ mod tests {
         assert_eq!(err, "Expected a section ID, such as 123, but got \"abc\"");
         assert!(parse("Acme", Kind::Project).is_err());
     }
+
+    #[test]
+    fn every_kind_names_itself_in_errors() {
+        let cases = [
+            (Kind::Project, "project ID, such as 123 or its URL"),
+            (Kind::Suite, "suite ID, such as S123 or its URL"),
+            (Kind::Milestone, "milestone ID, such as M123 or its URL"),
+            (Kind::Plan, "plan ID, such as 123 or its URL"),
+            (Kind::Run, "run ID, such as R123 or its URL"),
+            (Kind::Test, "test ID, such as T123 or its URL"),
+            (Kind::Result, "result ID, such as 123,"),
+        ];
+        for (kind, want) in cases {
+            let err = parse("x", kind).unwrap_err().to_string();
+            assert!(err.contains(want), "{err}");
+        }
+    }
+
+    #[test]
+    fn links_to_suites_milestones_and_tests_parse() {
+        let base = "https://x.testrail.io/index.php?";
+        assert_eq!(
+            parse(&format!("{base}/suites/view/6"), Kind::Suite).unwrap(),
+            6
+        );
+        assert_eq!(
+            parse(&format!("{base}/milestones/view/9"), Kind::Milestone).unwrap(),
+            9
+        );
+        assert_eq!(
+            parse(&format!("{base}/tests/view/1782"), Kind::Test).unwrap(),
+            1782
+        );
+        assert_eq!(parse("M9", Kind::Milestone).unwrap(), 9);
+        assert_eq!(parse("S6", Kind::Suite).unwrap(), 6);
+    }
 }

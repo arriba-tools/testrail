@@ -302,7 +302,9 @@ mod tests {
             .mock("GET", "/index.php?/api/v2/get_projects")
             .with_body("[]")
             .create();
-        let client = Client::for_tests(&server.url());
+        let mut client = Client::for_tests(&server.url());
+        // A wait short enough to keep the test fast, yet long enough to take the sleeping path.
+        client.max_wait = Duration::from_millis(1);
         assert_eq!(client.get("get_projects").unwrap(), json!([]));
         limited.assert();
     }
@@ -324,7 +326,9 @@ mod tests {
             .with_status(504)
             .expect(1)
             .create();
-        let client = Client::for_tests(&server.url());
+        let mut client = Client::for_tests(&server.url());
+        // A wait short enough to keep the test fast, yet long enough to take the sleeping path.
+        client.max_wait = Duration::from_millis(1);
         assert_eq!(client.get("get_run/1").unwrap(), json!({}));
         timeout.assert();
         assert!(client.post("add_result/1", &json!({})).is_err());
@@ -370,5 +374,22 @@ mod tests {
             .upload("add_attachment_to_run/16", &dir.path().join("missing.png"))
             .unwrap_err();
         assert!(err.to_string().ends_with("is not a file"), "{err}");
+    }
+
+    #[test]
+    fn clients_take_the_login_from_credentials() {
+        let creds = Credentials {
+            url: "https://acme.testrail.io".into(),
+            email: "me@x.com".into(),
+            key: "key".into(),
+            source: crate::credentials::Source::Stored,
+        };
+        let client = Client::new(&creds).unwrap();
+        assert_eq!(client.auth, "Basic bWVAeC5jb206a2V5");
+        assert_eq!(
+            client.url("get_case/1"),
+            "https://acme.testrail.io/index.php?/api/v2/get_case/1"
+        );
+        assert_eq!(client.max_wait, Duration::from_secs(60));
     }
 }

@@ -60,3 +60,36 @@ fn list(ctx: &Ctx, args: &ResultListArgs) -> Result<()> {
     note_more(page.more, page.items.len());
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{cli, get, page, statuses};
+    use mockito::Server;
+    use serde_json::json;
+
+    #[test]
+    fn results_list_for_a_test_a_case_in_a_run_and_a_run() {
+        let mut s = Server::new();
+        statuses(&mut s);
+        let results = page(
+            "results",
+            json!([{"id": 2064, "test_id": 1873, "status_id": 1, "created_on": 1762000000,
+                    "version": "2.4.11", "elapsed": "2m", "comment": "<p>Fine</p>"}]),
+        );
+        get(
+            &mut s,
+            "get_results/1873&limit=50&offset=0",
+            results.clone(),
+        );
+        get(
+            &mut s,
+            "get_results_for_case/92/264&limit=50&offset=0",
+            results.clone(),
+        );
+        get(&mut s, "get_results_for_run/92&limit=1&offset=0", results);
+        cli(&s, &["result", "list", "--test", "T1873"]).unwrap();
+        cli(&s, &["result", "list", "--run", "R92", "--case", "C264"]).unwrap();
+        cli(&s, &["result", "list", "--run", "92", "--limit", "1"]).unwrap();
+        cli(&s, &["--json", "result", "list", "-t", "1873"]).unwrap();
+    }
+}

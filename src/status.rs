@@ -36,3 +36,17 @@ pub fn run(ctx: &Ctx, cmd: StatusCommand) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{cli, statuses};
+    use mockito::Server;
+
+    #[test]
+    fn statuses_list_with_their_flags() {
+        let mut s = Server::new();
+        statuses(&mut s);
+        cli(&s, &["status", "list"]).unwrap();
+        cli(&s, &["--json", "status", "list"]).unwrap();
+    }
+}

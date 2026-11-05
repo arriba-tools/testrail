@@ -102,3 +102,51 @@ fn view(ctx: &Ctx, run: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::{cli, get, page, statuses};
+    use mockito::Server;
+    use serde_json::json;
+
+    #[test]
+    fn runs_list_by_project_and_by_plan_and_view() {
+        let mut s = Server::new();
+        statuses(&mut s);
+        get(
+            &mut s,
+            "get_runs/2&is_completed=0&limit=50&offset=0",
+            page(
+                "runs",
+                json!([{"id": 90, "name": "Codex", "untested_count": 124},
+                       {"id": 84, "name": "Installer", "passed_count": 11, "is_completed": true}]),
+            ),
+        );
+        get(
+            &mut s,
+            "get_runs/3&limit=50&offset=0",
+            page("runs", json!([])),
+        );
+        get(
+            &mut s,
+            "get_plan/91",
+            json!({"entries": [{"id": "e", "runs": [
+                {"id": 92, "name": "Win", "config": "Windows", "is_completed": false},
+                {"id": 93, "name": "Mac", "config": null, "is_completed": true}]}]}),
+        );
+        get(
+            &mut s,
+            "get_run/92",
+            json!({"id": 92, "name": "Win", "config": "Windows", "is_completed": true,
+                   "plan_id": 91, "milestone_id": null, "suite_id": 6,
+                   "created_on": 1762000000, "description": "<p>Notes</p>", "passed_count": 2}),
+        );
+        cli(&s, &["run", "list", "-p", "2", "--active"]).unwrap();
+        cli(&s, &["run", "list", "-p", "3"]).unwrap();
+        cli(&s, &["run", "list", "--plan", "91", "--completed"]).unwrap();
+        cli(&s, &["run", "list", "--plan", "91", "--limit", "1"]).unwrap();
+        cli(&s, &["--json", "run", "list", "--plan", "91"]).unwrap();
+        cli(&s, &["run", "view", "R92"]).unwrap();
+        cli(&s, &["--json", "run", "view", "92"]).unwrap();
+    }
+}
