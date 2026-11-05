@@ -59,7 +59,8 @@ testrail-arriba [options] <command>
 ```
 
 Wherever a command takes an ID, it also takes TestRail's prefixed form, such as `C39`, `R201`, or
-`T1001`, and the URL of the page. `--project` also takes the project's name.
+`T1001`, and the URL of the page. `--project` also takes the project's name. The top-level
+`--help` ends with a tree of how TestRail's objects relate.
 
 ### Browsing
 
@@ -69,7 +70,7 @@ Wherever a command takes an ID, it also takes TestRail's prefixed form, such as 
 | `project view <PROJECT>` | Show a project |
 | `suite list -p <PROJECT>` | List a project's suites |
 | `section list -p <PROJECT>` | List sections, `--tree` to indent them under their parents |
-| `case list -p <PROJECT>` | List cases, by `--suite`, `--section`, or title `--filter` |
+| `case list -p <PROJECT>` | List cases, by `--suite`, `--section`, title `--filter`, `--ref` such as a Jira key, or `--grep` for a word anywhere in their text |
 | `case view <CASE>` | Show a case with its custom text fields, preconditions, and steps |
 | `milestone list -p <PROJECT>` | List milestones with their sub-milestones |
 | `milestone view <MILESTONE>` | Show a milestone |
@@ -78,13 +79,13 @@ Wherever a command takes an ID, it also takes TestRail's prefixed form, such as 
 | `run list -p <PROJECT>` | List the runs outside plans |
 | `run list --plan <PLAN>` | List the runs inside a plan, which TestRail's run list leaves out |
 | `run view <RUN>` | Show a run with its progress |
-| `test list <RUN>` | List a run's tests, `--status failed,retest` to pick some |
+| `test list <RUN>` | List a run's tests, or with `--plan` those of every run in a plan, by `--status` or `--case` |
 | `test view <TEST>` | Show a test with its run and configuration, steps, and latest results with step outcomes |
 | `status list` | List result statuses with their IDs, custom ones included |
 
 Rich text reads as plain text, with lists numbered and nested as in TestRail, and images shown as
-`[image: attachment 451]`, which `attachment download 451` fetches. Run and plan tallies name
-custom statuses, as in `4 not applicable`.
+`[image: attachment 451]`, which `attachment download 451` fetches. A case with no steps says so
+rather than showing none. Run and plan tallies name custom statuses, as in `4 not applicable`.
 
 Case, plan, run, test, and result lists stop at 50 unless `--limit` or `--all` says otherwise, and
 say so on stderr when more remain.
@@ -164,6 +165,15 @@ Find a plan's runs and what is left to test in one of them:
 testrail-arriba plan list -p Acme --active --name "2.1"
 testrail-arriba run list --plan 15
 testrail-arriba test list R201 --status untested,retest
+```
+
+Find the cases behind a Jira issue or mentioning a feature, and the test for one of them on each
+platform in a plan:
+
+```
+testrail-arriba case list -p Acme --ref PROJ-123
+testrail-arriba case list -p Acme --grep sso
+testrail-arriba test list --plan 15 --case C52
 ```
 
 Read a test's steps, run them, then record the outcome with a screenshot per step:
