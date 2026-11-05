@@ -4,7 +4,7 @@ use std::io::{IsTerminal, Read};
 use std::path::Path;
 
 /// True when a person can answer prompts. Prompts render on stderr so stdout stays clean.
-pub fn interactive() -> bool {
+fn interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 

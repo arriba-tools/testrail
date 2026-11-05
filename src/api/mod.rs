@@ -96,15 +96,6 @@ fn encode(value: &str) -> String {
         .collect()
 }
 
-/// An ID as text, whether TestRail sent a number or, as for newer attachments, a string.
-pub fn id_text(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Number(n) => n.to_string(),
-        _ => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,12 +169,5 @@ mod tests {
             err.to_string(),
             "TestRail's answer to get_runs/1 has no runs"
         );
-    }
-
-    #[test]
-    fn ids_read_as_text() {
-        assert_eq!(id_text(&json!(55)), "55");
-        assert_eq!(id_text(&json!("2ec2-a")), "2ec2-a");
-        assert_eq!(id_text(&json!(null)), "");
     }
 }

@@ -88,7 +88,7 @@ pub fn env_present() -> bool {
 
 /// Credentials from the environment, or None when it sets no key. A key missing its companions is
 /// an error, so a half-set environment is not silently ignored.
-pub fn from_env(
+fn from_env(
     get: &dyn Fn(&str) -> Option<String>,
     site: Option<&str>,
 ) -> Result<Option<Credentials>> {

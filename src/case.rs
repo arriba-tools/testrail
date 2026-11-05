@@ -86,7 +86,7 @@ fn view(ctx: &Ctx, case: &str) -> Result<()> {
 }
 
 /// Shown in place of steps when a case has none.
-pub const NO_STEPS: &str =
+const NO_STEPS: &str =
     "None. This case has no steps, so a result would have nothing to check against.";
 
 /// A case's title and text as one lowercase string, for searching.

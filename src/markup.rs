@@ -16,12 +16,12 @@ pub fn attachment_src(id: &str) -> String {
 }
 
 /// Whether text is HTML already, so it passes through untouched.
-pub fn is_html(text: &str) -> bool {
+fn is_html(text: &str) -> bool {
     text.trim_start().starts_with('<')
 }
 
 /// Whether an image source names a local file rather than something TestRail can already serve.
-pub fn is_local(src: &str) -> bool {
+fn is_local(src: &str) -> bool {
     !(src.contains("://") || src.starts_with("index.php?") || src.starts_with("data:"))
 }
 

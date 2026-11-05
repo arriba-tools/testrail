@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use crate::api::{self, Client, id_text};
+use crate::api::{self, Client};
 use crate::cli::{
     AttachmentAddArgs, AttachmentCommand, AttachmentDeleteArgs, AttachmentDownloadArgs, HolderArgs,
 };
@@ -58,9 +58,9 @@ fn attachments(client: &Client, holder: &Holder) -> Result<Vec<Value>> {
 
 /// An attachment's ID, which newer servers send as `id` and older ones as `attachment_id`.
 fn attachment_id(v: &Value) -> String {
-    let id = id_text(&v["id"]);
+    let id = text(&v["id"]);
     if id.is_empty() {
-        id_text(&v["attachment_id"])
+        text(&v["attachment_id"])
     } else {
         id
     }
@@ -90,7 +90,7 @@ fn list(ctx: &Ctx, args: &HolderArgs) -> Result<()> {
 /// Upload `file` to the endpoint, returning the attachment's ID.
 pub fn upload(client: &Client, endpoint: &str, file: &Path) -> Result<String> {
     let v = client.upload(endpoint, file)?;
-    let id = id_text(&v["attachment_id"]);
+    let id = text(&v["attachment_id"]);
     if id.is_empty() {
         bail!("TestRail did not return an ID for {}", file.display());
     }

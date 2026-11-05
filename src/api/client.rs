@@ -66,7 +66,7 @@ impl Client {
 
     /// The URL of an endpoint such as `get_case/1`. The `/api/v2/` prefix that pagination links
     /// carry is accepted too.
-    pub fn url(&self, endpoint: &str) -> String {
+    fn url(&self, endpoint: &str) -> String {
         let e = endpoint.trim();
         let e = e
             .strip_prefix("index.php?")
